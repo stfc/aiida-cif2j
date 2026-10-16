@@ -29,9 +29,10 @@ Source = "https://github.com/stfc/aiida-cif2j"
 where = ["src"]
 
 [project.entry-points."aiida.calculations"]
-
+"cif2j.wannier_tb2j" = "aiida_cif2j.calculations.wannier_tb2j:WannierTB2JCalculation"
 
 [project.entry-points."aiida.parsers"]
+"tb2j" = "aiida_cif2j.parsers.tb2j:TB2JParser"
 
 
 [project.entry-points."aiida.workflows"]
