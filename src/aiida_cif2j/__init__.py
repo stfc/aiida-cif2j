@@ -2,4 +2,4 @@
 
 from importlib.metadata import version
 
-__version__ = version("aiida-chemshell")
+__version__ = version("aiida-cif2j")
