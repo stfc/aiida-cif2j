@@ -7,7 +7,7 @@
 [![Pipeline Status](https://github.com/stfc/aiida-cif2j/actions/workflows/ci-testing.yml/badge.svg?branch=main)](https://github.com/stfc/aiida-cif2j/actions)
 [![Coverage Status](https://coveralls.io/repos/github/stfc/aiida-cif2j/badge.svg?branch=main)](https://coveralls.io/github/stfc/aiida-cif2j?branch=main)
 
-[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18392782-blue.svg)](https://doi.org/10.5281/zenodo.18392782)
+<!-- [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18392782-blue.svg)](https://doi.org/10.5281/zenodo.18392782) -->
 
 An [AiiDA](https://www.aiida.net) plugin for calculating magnetic exchange interactions.
 
