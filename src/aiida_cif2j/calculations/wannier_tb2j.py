@@ -42,7 +42,7 @@ class WannierTB2JCalculation(CalcJob):
             valid_type=FolderData,
             required=False,
             help="`retrieved` output of the spin-up Wannier90Calculation, for a "
-            "collinear spin-polarized calculation. Requires 'wannier_folder_down' to "
+            "collinear spin-polarised calculation. Requires 'wannier_folder_down' to "
             "also be given.",
         )
         spec.input(
@@ -50,7 +50,7 @@ class WannierTB2JCalculation(CalcJob):
             valid_type=FolderData,
             required=False,
             help="`retrieved` output of the spin-down Wannier90Calculation, for a "
-            "collinear spin-polarized calculation. Requires 'wannier_folder_up' to "
+            "collinear spin-polarised calculation. Requires 'wannier_folder_up' to "
             "also be given.",
         )
         spec.input(

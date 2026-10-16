@@ -1,7 +1,12 @@
 """Tests for the `WannierTB2JWorkChain`."""
 
+from unittest.mock import patch
+
 import pytest
 from aiida.orm import Dict, List
+from aiida_quantumespresso.common.types import ElectronicType, SpinType
+from aiida_wannier90_workflows.data.structure import MagneticStructureData
+from aiida_wannier90_workflows.workflows.bands import Wannier90BandsWorkChain
 
 from aiida_cif2j.workflows.wannier import WannierTB2JWorkChain
 
@@ -326,3 +331,347 @@ def test_collate_results_success(
 
     assert result == ExitCode(0)
     assert process._outputs["retrieved"].pk == retrieved.pk
+
+
+def test_get_builder_from_protocol_missing_tb2j_code(generate_structure):
+    """A `codes` mapping without a 'tb2j' entry should be rejected up front."""
+    with pytest.raises(ValueError, match="tb2j"):
+        WannierTB2JWorkChain.get_builder_from_protocol(
+            codes={"pw": "x"}, structure=generate_structure(), pseudo_family="x"
+        )
+
+
+def test_get_builder_from_protocol_plain_structure_collinear_raises(
+    generate_structure, wannier_tb2j_code
+):
+    """A plain `StructureData` under the default collinear spin type must be rejected.
+
+    `collinear_magnetic_moments` can't read per-kind moments off a plain
+    `StructureData` (it isn't `MagneticStructureData`), so this must raise rather than
+    silently build a non-magnetic SCF.
+    """
+    with pytest.raises(TypeError, match="MagneticStructureData"):
+        WannierTB2JWorkChain.get_builder_from_protocol(
+            codes={"pw": "x", "tb2j": wannier_tb2j_code()},
+            structure=generate_structure(),
+            pseudo_family="x",
+        )
+
+
+def test_get_builder_from_protocol_plain_structure_with_explicit_moments(
+    generate_wannier_bands_builder, generate_structure, wannier_tb2j_code
+):
+    """An explicit `initial_magnetic_moments` bypasses the MagneticStructureData need.
+
+    `collinear_magnetic_moments` is simply never called in that case.
+    """
+    structure = generate_structure()
+    fake_builder = generate_wannier_bands_builder(structure)
+    custom_moments = {"Fe": 2.2}
+
+    with patch.object(
+        Wannier90BandsWorkChain, "get_builder_from_protocol", return_value=fake_builder
+    ) as mock:
+        WannierTB2JWorkChain.get_builder_from_protocol(
+            codes={"pw": "x", "tb2j": wannier_tb2j_code()},
+            structure=structure,
+            pseudo_family="x",
+            initial_magnetic_moments=custom_moments,
+        )
+
+    assert mock.call_args.kwargs["initial_magnetic_moments"] == custom_moments
+
+
+def test_get_builder_from_protocol_parses_file_structure(
+    generate_wannier_bands_builder,
+    generate_structure,
+    get_test_data_file,
+    wannier_tb2j_code,
+):
+    """A `SinglefileData` structure should be parsed before reaching the builder."""
+    fake_builder = generate_wannier_bands_builder(generate_structure())
+
+    with patch.object(
+        Wannier90BandsWorkChain, "get_builder_from_protocol", return_value=fake_builder
+    ) as mock:
+        builder = WannierTB2JWorkChain.get_builder_from_protocol(
+            codes={"pw": "x", "tb2j": wannier_tb2j_code()},
+            structure=get_test_data_file("nacl.cif"),
+            pseudo_family="x",
+        )
+
+    passed_structure = mock.call_args.kwargs["structure"]
+    assert isinstance(passed_structure, MagneticStructureData)
+    assert builder.structure.pk == passed_structure.pk
+
+
+def test_get_builder_from_protocol_structure_passthrough(
+    generate_wannier_bands_builder, generate_structure, wannier_tb2j_code
+):
+    """An already-built structure should be forwarded unchanged, no calcfunction run."""
+    structure = generate_structure()
+    fake_builder = generate_wannier_bands_builder(structure)
+
+    with patch.object(
+        Wannier90BandsWorkChain, "get_builder_from_protocol", return_value=fake_builder
+    ) as mock:
+        WannierTB2JWorkChain.get_builder_from_protocol(
+            codes={"pw": "x", "tb2j": wannier_tb2j_code()},
+            structure=structure,
+            pseudo_family="x",
+            spin_type=SpinType.NONE,
+        )
+
+    assert mock.call_args.kwargs["structure"] is structure
+
+
+def test_get_builder_from_protocol_collinear_moments_autofilled(
+    generate_wannier_bands_builder, generate_magnetic_structure, wannier_tb2j_code
+):
+    """Default `SpinType.COLLINEAR` should auto-fill `initial_magnetic_moments`."""
+    structure = generate_magnetic_structure()
+    fake_builder = generate_wannier_bands_builder(structure)
+
+    with patch.object(
+        Wannier90BandsWorkChain, "get_builder_from_protocol", return_value=fake_builder
+    ) as mock:
+        WannierTB2JWorkChain.get_builder_from_protocol(
+            codes={"pw": "x", "tb2j": wannier_tb2j_code()},
+            structure=structure,
+            pseudo_family="x",
+        )
+
+    assert mock.call_args.kwargs["initial_magnetic_moments"] == {"Fe0": 2.0, "O1": 0.0}
+
+
+def test_get_builder_from_protocol_explicit_moments_not_overwritten(
+    generate_wannier_bands_builder, generate_magnetic_structure, wannier_tb2j_code
+):
+    """Caller-supplied `initial_magnetic_moments` should be forwarded verbatim."""
+    structure = generate_magnetic_structure()
+    fake_builder = generate_wannier_bands_builder(structure)
+    custom_moments = {"Fe0": 5.0, "O1": 0.0}
+
+    with patch.object(
+        Wannier90BandsWorkChain, "get_builder_from_protocol", return_value=fake_builder
+    ) as mock:
+        WannierTB2JWorkChain.get_builder_from_protocol(
+            codes={"pw": "x", "tb2j": wannier_tb2j_code()},
+            structure=structure,
+            pseudo_family="x",
+            initial_magnetic_moments=custom_moments,
+        )
+
+    assert mock.call_args.kwargs["initial_magnetic_moments"] == custom_moments
+
+
+def test_get_builder_from_protocol_merge_and_withmpi(
+    generate_wannier_bands_builder, generate_structure, wannier_tb2j_code
+):
+    """The Wannier90 builder's values survive the merge; withmpi is forced off."""
+    structure = generate_structure()
+    fake_builder = generate_wannier_bands_builder(structure)
+    tb2j_code = wannier_tb2j_code()
+
+    with patch.object(
+        Wannier90BandsWorkChain, "get_builder_from_protocol", return_value=fake_builder
+    ):
+        builder = WannierTB2JWorkChain.get_builder_from_protocol(
+            codes={"pw": "x", "tb2j": tb2j_code},
+            structure=structure,
+            pseudo_family="x",
+            spin_type=SpinType.NONE,
+        )
+
+    assert builder.tb2j.code.pk == tb2j_code.pk
+    assert builder.scf.pw.code.pk == fake_builder.scf.pw.code.pk
+    assert (
+        builder.wannier90.wannier90.code.pk == fake_builder.wannier90.wannier90.code.pk
+    )
+    assert builder.wannier90.wannier90.metadata.options.withmpi is False
+    assert builder.wannier90.wannier90.metadata.options.resources == {
+        "num_machines": 1,
+        "num_mpiprocs_per_machine": 1,
+    }
+
+
+def test_get_builder_from_protocol_wannier90_withmpi_true(
+    generate_wannier_bands_builder, generate_structure, wannier_tb2j_code
+):
+    """Explicitly requesting `wannier90_withmpi=True` leaves resources untouched."""
+    structure = generate_structure()
+    fake_builder = generate_wannier_bands_builder(structure)
+    original_resources = dict(
+        fake_builder.wannier90.wannier90.metadata.options.resources
+    )
+
+    with patch.object(
+        Wannier90BandsWorkChain, "get_builder_from_protocol", return_value=fake_builder
+    ):
+        builder = WannierTB2JWorkChain.get_builder_from_protocol(
+            codes={"pw": "x", "tb2j": wannier_tb2j_code()},
+            structure=structure,
+            pseudo_family="x",
+            spin_type=SpinType.NONE,
+            wannier90_withmpi=True,
+        )
+
+    assert builder.wannier90.wannier90.metadata.options.withmpi is True
+    assert builder.wannier90.wannier90.metadata.options.resources == original_resources
+
+
+def test_get_builder_from_protocol_tot_magnetization(
+    generate_wannier_bands_builder, generate_magnetic_structure, wannier_tb2j_code
+):
+    """Insulator + collinear should inject the net `tot_magnetization` into scf/nscf."""
+    structure = generate_magnetic_structure(
+        kinds=(("Mn", (0.0, 0.0, 4.6)), ("Mn", (0.0, 0.0, -4.6)))
+    )
+    fake_builder = generate_wannier_bands_builder(structure)
+
+    with patch.object(
+        Wannier90BandsWorkChain, "get_builder_from_protocol", return_value=fake_builder
+    ):
+        builder = WannierTB2JWorkChain.get_builder_from_protocol(
+            codes={"pw": "x", "tb2j": wannier_tb2j_code()},
+            structure=structure,
+            pseudo_family="x",
+            electronic_type=ElectronicType.INSULATOR,
+            spin_type=SpinType.COLLINEAR,
+        )
+
+    assert builder.scf.pw.parameters.get_dict()["SYSTEM"]["tot_magnetization"] == 0.0
+    assert builder.nscf.pw.parameters.get_dict()["SYSTEM"]["tot_magnetization"] == 0.0
+
+
+def test_get_builder_from_protocol_tot_magnetization_skips_absent_nscf(
+    generate_wannier_bands_builder, generate_magnetic_structure, wannier_tb2j_code
+):
+    """The tot_magnetization fixup must not crash when 'nscf' was never configured."""
+    structure = generate_magnetic_structure(
+        kinds=(("Mn", (0.0, 0.0, 4.6)), ("Mn", (0.0, 0.0, -4.6)))
+    )
+    fake_builder = generate_wannier_bands_builder(structure, with_nscf=False)
+
+    with patch.object(
+        Wannier90BandsWorkChain, "get_builder_from_protocol", return_value=fake_builder
+    ):
+        builder = WannierTB2JWorkChain.get_builder_from_protocol(
+            codes={"pw": "x", "tb2j": wannier_tb2j_code()},
+            structure=structure,
+            pseudo_family="x",
+            electronic_type=ElectronicType.INSULATOR,
+            spin_type=SpinType.COLLINEAR,
+        )
+
+    assert builder.scf.pw.parameters.get_dict()["SYSTEM"]["tot_magnetization"] == 0.0
+    assert builder.nscf.pw.parameters is None
+
+
+@pytest.mark.parametrize("spin_type", [SpinType.NONE, SpinType.NON_COLLINEAR])
+def test_get_builder_from_protocol_tot_magnetization_not_applied(
+    generate_wannier_bands_builder, generate_structure, wannier_tb2j_code, spin_type
+):
+    """The tot_magnetization fixup must only fire for insulator + collinear."""
+    structure = generate_structure()
+    fake_builder = generate_wannier_bands_builder(structure)
+
+    with patch.object(
+        Wannier90BandsWorkChain, "get_builder_from_protocol", return_value=fake_builder
+    ):
+        builder = WannierTB2JWorkChain.get_builder_from_protocol(
+            codes={"pw": "x", "tb2j": wannier_tb2j_code()},
+            structure=structure,
+            pseudo_family="x",
+            electronic_type=ElectronicType.INSULATOR,
+            spin_type=spin_type,
+        )
+
+    assert "tot_magnetization" not in builder.scf.pw.parameters.get_dict().get(
+        "SYSTEM", {}
+    )
+
+
+def test_get_builder_from_protocol_tb2j_options_and_parameters(
+    generate_wannier_bands_builder, generate_structure, wannier_tb2j_code
+):
+    """`tb2j_parameters`/`tb2j_options`, when given, should be set on the builder."""
+    structure = generate_structure()
+    fake_builder = generate_wannier_bands_builder(structure)
+
+    with patch.object(
+        Wannier90BandsWorkChain, "get_builder_from_protocol", return_value=fake_builder
+    ):
+        builder = WannierTB2JWorkChain.get_builder_from_protocol(
+            codes={"pw": "x", "tb2j": wannier_tb2j_code()},
+            structure=structure,
+            pseudo_family="x",
+            spin_type=SpinType.NONE,
+            tb2j_parameters={"efermi": 1.0},
+            tb2j_options={"resources": {"num_machines": 2}},
+        )
+
+    assert builder.tb2j.parameters.get_dict() == {"efermi": 1.0}
+    assert builder.tb2j.metadata.options.resources == {"num_machines": 2}
+
+
+def test_get_builder_from_protocol_tb2j_options_omitted(
+    generate_wannier_bands_builder, generate_structure, wannier_tb2j_code
+):
+    """Omitting `tb2j_options` leaves `WannierTB2JCalculation`'s own defaults intact."""
+    structure = generate_structure()
+    fake_builder = generate_wannier_bands_builder(structure)
+
+    with patch.object(
+        Wannier90BandsWorkChain, "get_builder_from_protocol", return_value=fake_builder
+    ):
+        builder = WannierTB2JWorkChain.get_builder_from_protocol(
+            codes={"pw": "x", "tb2j": wannier_tb2j_code()},
+            structure=structure,
+            pseudo_family="x",
+            spin_type=SpinType.NONE,
+        )
+
+    assert "resources" not in dict(builder.tb2j.metadata.options)
+    assert "parser_name" not in dict(builder.tb2j.metadata.options)
+
+
+def test_get_builder_from_protocol_magnetic_elements(
+    generate_wannier_bands_builder, generate_structure, wannier_tb2j_code
+):
+    """Given `magnetic_elements` should be set on the builder as a `List`."""
+    structure = generate_structure()
+    fake_builder = generate_wannier_bands_builder(structure)
+
+    with patch.object(
+        Wannier90BandsWorkChain, "get_builder_from_protocol", return_value=fake_builder
+    ):
+        builder = WannierTB2JWorkChain.get_builder_from_protocol(
+            codes={"pw": "x", "tb2j": wannier_tb2j_code()},
+            structure=structure,
+            pseudo_family="x",
+            spin_type=SpinType.NONE,
+            magnetic_elements=["Fe"],
+        )
+
+    assert builder.magnetic_elements.get_list() == ["Fe"]
+
+
+def test_get_builder_from_protocol_magnetic_elements_omitted(
+    generate_wannier_bands_builder, generate_structure, wannier_tb2j_code
+):
+    """Omitting `magnetic_elements` preserves the WorkChain's own auto-detection."""
+    structure = generate_structure()
+    fake_builder = generate_wannier_bands_builder(structure)
+
+    with patch.object(
+        Wannier90BandsWorkChain, "get_builder_from_protocol", return_value=fake_builder
+    ):
+        builder = WannierTB2JWorkChain.get_builder_from_protocol(
+            codes={"pw": "x", "tb2j": wannier_tb2j_code()},
+            structure=structure,
+            pseudo_family="x",
+            spin_type=SpinType.NONE,
+        )
+
+    assert "magnetic_elements" not in builder._data

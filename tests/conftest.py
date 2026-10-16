@@ -16,12 +16,14 @@ from aiida.orm import (
     Dict,
     FolderData,
     InstalledCode,
+    KpointsData,
     List,
     SinglefileData,
     StructureData,
     WorkChainNode,
 )
 from aiida_wannier90_workflows.data.structure import MagneticStructureData
+from aiida_wannier90_workflows.workflows.bands import Wannier90BandsWorkChain
 
 pytest_plugins = "aiida.tools.pytest_fixtures"
 
@@ -231,5 +233,36 @@ def generate_workchain_process():
         process._node = WorkChainNode()
         process._node.store()
         return process
+
+    return factory
+
+
+@pytest.fixture
+def generate_wannier_bands_builder(aiida_code_installed):
+    """Return a factory for a cheaply-populated, structurally valid builder.
+
+    Stands in for what `Wannier90BandsWorkChain.get_builder_from_protocol` would
+    return, without needing a real registered pseudopotential family.
+    """
+
+    def factory(structure: StructureData, with_nscf: bool = True):
+        pw_code = aiida_code_installed(default_calc_job_plugin="quantumespresso.pw")
+        w90_code = aiida_code_installed(default_calc_job_plugin="wannier90.wannier90")
+
+        builder = Wannier90BandsWorkChain.get_builder()
+        builder.structure = structure
+        builder.scf.pw.code = pw_code
+        builder.scf.pw.parameters = Dict({"SYSTEM": {}})
+        builder.scf.pw.metadata.options.resources = {"num_machines": 1}
+        if with_nscf:
+            builder.nscf.pw.code = pw_code
+            builder.nscf.pw.parameters = Dict({"SYSTEM": {}})
+            builder.nscf.pw.metadata.options.resources = {"num_machines": 1}
+        builder.wannier90.wannier90.code = w90_code
+        builder.wannier90.wannier90.parameters = Dict({})
+        builder.wannier90.wannier90.kpoints = KpointsData()
+        builder.wannier90.wannier90.metadata.options.resources = {"num_machines": 1}
+        builder.wannier90.wannier90.metadata.options.withmpi = True
+        return builder
 
     return factory

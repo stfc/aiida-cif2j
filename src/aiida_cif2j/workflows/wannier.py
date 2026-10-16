@@ -1,8 +1,13 @@
 """AiiDA WorkChain for combining Wannier90 and TB2J into a single workflow."""
 
+from collections.abc import Mapping
+
+from aiida import orm
 from aiida.common import AttributeDict
-from aiida.engine import ExitCode, ToContext, WorkChain, if_
+from aiida.engine import ExitCode, ProcessBuilder, ToContext, WorkChain, if_
 from aiida.orm import Dict, FolderData, List, SinglefileData, StructureData
+from aiida_quantumespresso.common.types import ElectronicType, SpinType
+from aiida_wannier90_workflows.common.types import WannierProjectionType
 from aiida_wannier90_workflows.data.structure import MagneticStructureData
 from aiida_wannier90_workflows.workflows.bands import Wannier90BandsWorkChain
 
@@ -11,7 +16,11 @@ from aiida_cif2j.calculations.utils import (
     parse_magnetic_structure,
 )
 from aiida_cif2j.calculations.wannier_tb2j import WannierTB2JCalculation
-from aiida_cif2j.workflows.utils import validate_chemical_symbols
+from aiida_cif2j.workflows.utils import (
+    collinear_magnetic_moments,
+    total_magnetization,
+    validate_chemical_symbols,
+)
 
 
 class WannierTB2JWorkChain(WorkChain):
@@ -19,7 +28,14 @@ class WannierTB2JWorkChain(WorkChain):
 
     @classmethod
     def define(cls, spec):
-        """Define the WorkChain's specification."""
+        """
+        Define the inputs, outputs and outline of the WorkChain.
+
+        Parameters
+        ----------
+        spec : WorkChainSpec
+            The AiiDA Process specification object for the WorkChain.
+        """
         super().define(spec)
 
         spec.expose_inputs(Wannier90BandsWorkChain, exclude=("structure",))
@@ -64,7 +80,7 @@ class WannierTB2JWorkChain(WorkChain):
                 "The Wannier90BandsWorkChain finished successfully but exposed "
                 "neither a 'wannier90' output (non-collinear/SOC) nor both "
                 "'wannier90_up' and 'wannier90_down' outputs (collinear "
-                "spin-polarized)."
+                "spin-polarised)."
             ),
         )
         spec.exit_code(
@@ -97,12 +113,21 @@ class WannierTB2JWorkChain(WorkChain):
         return
 
     def parse_structure_from_file(self) -> None:
-        """Parse a input .cif structure file."""
+        """Parse the input CIF/MCIF structure file into `ctx.structure`."""
         self.ctx.structure = parse_magnetic_structure(self.inputs.structure)
         return
 
     def auto_detect_magnetic_elements(self):
-        """Auto-detect magnetic elements from input structure."""
+        """
+        Auto-detect magnetic elements from the resolved input structure.
+
+        Returns
+        -------
+        ExitCode or None
+            `ERROR_MISSING_MAGNETIC_ELEMENTS` if the resolved structure is not a
+            `MagneticStructureData`, or no magnetic elements could be detected on
+            it; `None` otherwise.
+        """
         structure = (
             self.ctx.structure
             if self._should_parse_structure_from_file()
@@ -118,7 +143,14 @@ class WannierTB2JWorkChain(WorkChain):
         return None
 
     def run_wannier90(self):
-        """Run the Wannier90BandsWorkChain step of the workflow."""
+        """
+        Submit the Wannier90BandsWorkChain step of the workflow.
+
+        Returns
+        -------
+        ToContext
+            Stores the submitted process under the `wannier90` context key.
+        """
         inputs = AttributeDict(self.exposed_inputs(Wannier90BandsWorkChain))
         inputs["structure"] = (
             self.ctx.structure
@@ -134,7 +166,16 @@ class WannierTB2JWorkChain(WorkChain):
         return ToContext(wannier90=running)
 
     def run_tb2j(self):
-        """Run the TB2J step of the workflow."""
+        """
+        Build the TB2J calculation inputs from the Wannier90 outputs and submit.
+
+        Returns
+        -------
+        ToContext or ExitCode
+            Stores the submitted process under the `tb2j_step` context key, or one
+            of `ERROR_WANNIER90_WC`, `ERROR_MISSING_WANNIER_OUTPUTS`,
+            `ERROR_MISSING_FERMI_ENERGY` if a prerequisite check fails.
+        """
         if not self.ctx.wannier90.is_finished_ok:
             return self.exit_codes.ERROR_WANNIER90_WC
 
@@ -190,7 +231,15 @@ class WannierTB2JWorkChain(WorkChain):
         return ToContext(tb2j_step=running)
 
     def collate_results(self):
-        """Bring together the outputs from the full WorkChain."""
+        """
+        Bring together the outputs from the full WorkChain.
+
+        Returns
+        -------
+        ExitCode
+            `ERROR_TB2J_PLUGIN` if the TB2J calculation failed, `ExitCode(0)`
+            otherwise.
+        """
         if not self.ctx.tb2j_step.is_finished_ok:
             return self.exit_codes.ERROR_TB2J_PLUGIN
 
@@ -213,7 +262,173 @@ class WannierTB2JWorkChain(WorkChain):
         return ExitCode(0)
 
     def _should_parse_structure_from_file(self) -> bool:
+        """Return whether the 'structure' input is a file that needs parsing."""
         return isinstance(self.inputs.structure, SinglefileData)
 
     def _should_auto_detect_magnetic_elements(self) -> bool:
+        """Return whether 'magnetic_elements' is absent and must be auto-detected."""
         return "magnetic_elements" not in self.inputs
+
+    @classmethod
+    def get_builder_from_protocol(
+        cls,
+        codes: Mapping[str, str | int | orm.Code],
+        structure: StructureData | MagneticStructureData | SinglefileData,
+        pseudo_family: str | None = None,
+        *,
+        protocol: str | None = None,
+        spin_type: SpinType = SpinType.COLLINEAR,
+        electronic_type: ElectronicType = ElectronicType.METAL,
+        projection_type: WannierProjectionType = WannierProjectionType.ANALYTIC,
+        wannier90_withmpi: bool = False,
+        magnetic_elements: list[str] | None = None,
+        tb2j_parameters: dict | None = None,
+        tb2j_options: dict | None = None,
+        **kwargs,
+    ) -> ProcessBuilder:
+        """
+        Return a builder prepopulated for a magnetic-exchange Wannier90 + TB2J run.
+
+        `electronic_type` defaults to METAL (not INSULATOR) so QE reports a single
+        `fermi_energy`, which `run_tb2j`'s auto-fill requires; `projection_type`
+        defaults to ANALYTIC (not SCDM/ATOMIC_PROJECTORS_QE) since some `wannier90.x`
+        builds reject the `dis_proj_min`/`dis_proj_max` keywords those need.
+
+        Parameters
+        ----------
+        codes : Mapping[str, str or int or orm.Code]
+            Codes for each step, keyed by `'pw'`, `'pw2wannier90'`, `'wannier90'`,
+            `'tb2j'`, and optionally `'projwfc'`/`'open_grid'`. String/int values
+            are resolved with `orm.load_code`.
+        structure : StructureData or MagneticStructureData or SinglefileData
+            The input structure, or a `'CIF'`/`'MCIF'` file to parse into one first.
+        pseudo_family : str, optional
+            The pseudopotential family to use for the Wannier90/QE steps.
+        protocol : str, optional
+            The protocol to use, forwarded to
+            `Wannier90BandsWorkChain.get_builder_from_protocol`.
+        spin_type : SpinType, optional
+            The spin treatment for the calculation. Defaults to
+            `SpinType.COLLINEAR`.
+        electronic_type : ElectronicType, optional
+            The electronic treatment for the calculation. Defaults to
+            `ElectronicType.METAL`.
+        projection_type : WannierProjectionType, optional
+            The Wannier90 projection type. Defaults to
+            `WannierProjectionType.ANALYTIC`.
+        wannier90_withmpi : bool, optional
+            Whether to run `wannier90.x` under MPI. Defaults to `False`, which
+            also forces single-task resources, to avoid a known file-locking
+            crash from an unintentionally-serial binary launched under
+            `mpirun -n N`.
+        magnetic_elements : list of str, optional
+            Elements for which the exchange interaction is considered. If not
+            given, the WorkChain auto-detects them at runtime.
+        tb2j_parameters : dict, optional
+            Parameters for the TB2J calculation (`tb2j.parameters`).
+        tb2j_options : dict, optional
+            `metadata.options` for the TB2J calculation
+            (`tb2j.metadata.options`). If not given, `WannierTB2JCalculation`'s
+            own defaults apply.
+        **kwargs
+            Forwarded to `Wannier90BandsWorkChain.get_builder_from_protocol`.
+
+        Returns
+        -------
+        ProcessBuilder
+            A builder ready to submit, pending any further caller customisation.
+
+        Raises
+        ------
+        ValueError
+            If `codes` does not contain a `'tb2j'` entry.
+        TypeError
+            If `spin_type` is `SpinType.COLLINEAR`, no `initial_magnetic_moments`
+            was given, and `structure` does not resolve to a
+            `MagneticStructureData`.
+        """
+        if "tb2j" not in codes:
+            raise ValueError("`codes` does not contain the required key: tb2j")
+
+        codes = dict(codes)  # defensive copy; check_codes mutates its argument in place
+        tb2j_code = codes.pop("tb2j")
+        if isinstance(tb2j_code, str | int):
+            tb2j_code = orm.load_code(tb2j_code)
+
+        # Wannier90BandsWorkChain.get_builder_from_protocol only accepts StructureData;
+        # carry out initial parsing of SinglefileData before creating builder.
+        structure_node = (
+            parse_magnetic_structure(structure)
+            if isinstance(structure, SinglefileData)
+            else structure
+        )
+
+        # Fixup 1: bypass is_collin_mag()'s antiferromagnetic misdetection.
+        if spin_type is SpinType.COLLINEAR and "initial_magnetic_moments" not in kwargs:
+            if not isinstance(structure_node, MagneticStructureData):
+                raise TypeError(
+                    "get_builder_from_protocol needs a `MagneticStructureData` "
+                    "structure to auto-fill 'initial_magnetic_moments' for a "
+                    "collinear calculation (a plain `StructureData` carries no "
+                    "per-kind magnetic moments); pass one, or supply "
+                    "'initial_magnetic_moments' explicitly."
+                )
+            kwargs["initial_magnetic_moments"] = collinear_magnetic_moments(
+                structure_node
+            )
+
+        wannier_builder = Wannier90BandsWorkChain.get_builder_from_protocol(
+            codes=codes,
+            structure=structure_node,
+            pseudo_family=pseudo_family,
+            protocol=protocol,
+            electronic_type=electronic_type,
+            spin_type=spin_type,
+            projection_type=projection_type,
+            **kwargs,
+        )
+
+        # Create builder for this WorkChain from constituents
+        builder = cls.get_builder()
+        merged_data = dict(builder._data)
+        merged_data.update(wannier_builder._data)
+        builder._data = merged_data
+
+        builder.structure = structure_node
+
+        # Force serial wannier90.x (avoids a known Fortran file-locking crash
+        # from an unintentionally-serial binary launched under `mpirun -n N`).
+        w90_options = builder.wannier90.wannier90.metadata.options
+        w90_options.withmpi = wannier90_withmpi
+        if not wannier90_withmpi:
+            w90_options.resources = {"num_machines": 1, "num_mpiprocs_per_machine": 1}
+
+        # QE aborts for insulator + collinear without an explicit net
+        # tot_magnetization.
+        if (
+            electronic_type is ElectronicType.INSULATOR
+            and spin_type is SpinType.COLLINEAR
+        ):
+            net_magnetization = total_magnetization(
+                structure_node, kwargs["initial_magnetic_moments"]
+            )
+            for namespace_name in ("scf", "nscf"):
+                if getattr(wannier_builder, namespace_name).pw.code is None:
+                    continue
+                sub_builder = getattr(builder, namespace_name)
+                pw_parameters = sub_builder.pw.parameters.get_dict()
+                pw_parameters.setdefault("SYSTEM", {})["tot_magnetization"] = (
+                    net_magnetization
+                )
+                sub_builder.pw.parameters = orm.Dict(dict=pw_parameters)
+
+        builder.tb2j.code = tb2j_code
+        if tb2j_parameters is not None:
+            builder.tb2j.parameters = orm.Dict(dict=tb2j_parameters)
+        if tb2j_options is not None:
+            builder.tb2j.metadata.options = tb2j_options
+
+        if magnetic_elements is not None:
+            builder.magnetic_elements = orm.List(list(magnetic_elements))
+
+        return builder
