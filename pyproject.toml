@@ -20,7 +20,7 @@ classifiers = [
     "Development Status :: 3 - Alpha",
 ]
 requires-python = ">=3.10"
-dependencies = ["aiida-core>=2.7,<3"]
+dependencies = ["aiida-core>=2.7,<3", "pymatgen"]
 
 [project.urls]
 Source = "https://github.com/stfc/aiida-cif2j"

@@ -17,7 +17,7 @@ An [AiiDA](https://www.aiida.net) plugin for calculating magnetic exchange inter
 This plugin is available through PyPI and should be installed using [`pip`](https://pip.pypa.io/en/stable/) python package manager.
 
 ``` bash
-pip install aiida-chemshell 
+pip install aiida-cif2j
 ```
 
 ## Requirements
@@ -25,3 +25,15 @@ pip install aiida-chemshell
 To use this plugin a configured AiiDA profile and computer configuration are required, see the
 [AiiDa documentation](https://aiida.readthedocs.io/projects/aiida-core/en/latest/intro/get_started.html)
 for instructions on how to install and configure AiiDA.
+
+### Optional: Wannier90 Workflows
+
+This project exposes a WorkChain which will carry out the full process of calculating
+Wannier functions for a structure which are then directly fed into TB2J.  This requires 
+a third party package called aiida-wannier90-workflows. At present
+the underlying aiida-wannier90-workflows package is not release on PyPI and must be installed
+from the git repo as follows:
+
+``` bash
+pip install git+https://github.com/aiidateam/aiida-wannier90-workflows.git@v3.1.0
+```

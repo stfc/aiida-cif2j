@@ -1,6 +1,7 @@
 """PyTest configurations."""
 
 import io
+import pathlib
 
 import pytest
 from aiida.common.folders import Folder
@@ -8,9 +9,58 @@ from aiida.common.links import LinkType
 from aiida.engine import CalcJob
 from aiida.engine.utils import instantiate_process
 from aiida.manage.manager import get_manager
-from aiida.orm import CalcJobNode, Dict, FolderData, InstalledCode, List, StructureData
+from aiida.orm import (
+    CalcJobNode,
+    Dict,
+    FolderData,
+    InstalledCode,
+    List,
+    SinglefileData,
+    StructureData,
+)
+from aiida_wannier90_workflows.data.structure import MagneticStructureData
 
 pytest_plugins = "aiida.tools.pytest_fixtures"
+
+
+@pytest.fixture
+def get_data_filepath() -> pathlib.Path:
+    """Return the path to the tests data folder."""
+    return pathlib.Path(__file__).resolve().parent / "data"
+
+
+@pytest.fixture
+def get_test_data_file(get_data_filepath):
+    """Return a factory for a `SinglefileData` node from a file in the data folder."""
+
+    def factory(fname: str) -> SinglefileData:
+        return SinglefileData(file=str(get_data_filepath / fname))
+
+    return factory
+
+
+@pytest.fixture
+def generate_magnetic_structure():
+    """Return a factory to build a `MagneticStructureData` node with explicit magmom."""
+
+    def factory(
+        kinds: tuple[tuple[str, tuple[float, float, float] | None], ...] = (
+            ("Fe", (0.0, 0.0, 2.0)),
+            ("O", (0.0, 0.0, 0.0)),
+        ),
+        cell=((4.0, 0.0, 0.0), (0.0, 4.0, 0.0), (0.0, 0.0, 4.0)),
+    ) -> MagneticStructureData:
+        structure = MagneticStructureData(cell=cell, pbc=(True, True, True))
+        for index, (symbol, magmom) in enumerate(kinds):
+            structure.append_atom(
+                position=(float(index), 0.0, 0.0),
+                symbols=symbol,
+                name=f"{symbol}{index}",
+                magmom=magmom,
+            )
+        return structure
+
+    return factory
 
 
 @pytest.fixture
