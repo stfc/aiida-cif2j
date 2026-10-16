@@ -1,0 +1,124 @@
+"""PyTest configurations."""
+
+import io
+
+import pytest
+from aiida.common.folders import Folder
+from aiida.common.links import LinkType
+from aiida.engine import CalcJob
+from aiida.engine.utils import instantiate_process
+from aiida.manage.manager import get_manager
+from aiida.orm import CalcJobNode, Dict, FolderData, InstalledCode, List, StructureData
+
+pytest_plugins = "aiida.tools.pytest_fixtures"
+
+
+@pytest.fixture
+def generate_structure():
+    """Return a factory to build a simple `StructureData` node."""
+
+    def factory(
+        cell=((2.87, 0.0, 0.0), (0.0, 2.87, 0.0), (0.0, 0.0, 2.87)),
+        pbc=(True, True, True),
+        symbol="Fe",
+    ) -> StructureData:
+        structure = StructureData(cell=cell, pbc=pbc)
+        structure.append_atom(position=(0.0, 0.0, 0.0), symbols=symbol)
+        return structure
+
+    return factory
+
+
+@pytest.fixture
+def generate_folder_data():
+    """Return a factory to build a `FolderData` node of given, empty files."""
+
+    def factory(filenames: list[str]) -> FolderData:
+        folder_data = FolderData()
+        for filename in filenames:
+            folder_data.put_object_from_filelike(io.BytesIO(b""), filename)
+        return folder_data
+
+    return factory
+
+
+@pytest.fixture
+def wannier_tb2j_code(aiida_code_installed):
+    """Return a factory for an `InstalledCode` for the `WannierTB2JCalculation`."""
+
+    def factory() -> InstalledCode:
+        return aiida_code_installed(
+            filepath_executable="wann2J.py",
+            default_calc_job_plugin="cif2j.wannier_tb2j",
+        )
+
+    return factory
+
+
+@pytest.fixture
+def generate_inputs(wannier_tb2j_code, generate_structure, generate_folder_data):
+    """Return a factory for a dictionary of inputs for the `WannierTB2JCalculation`."""
+
+    def factory(
+        spinor: bool = True,
+        elements: tuple[str, ...] = ("Fe",),
+        parameters: dict | None = None,
+        structure: StructureData | None = None,
+        wannier_files: tuple[str, ...] = ("aiida_tb.dat",),
+    ) -> dict:
+        parameters = {"efermi": 0.0} if parameters is None else parameters
+        inputs = {
+            "code": wannier_tb2j_code(),
+            "elements": List(list(elements)),
+            "parameters": Dict(parameters),
+            "structure": structure if structure is not None else generate_structure(),
+        }
+        if spinor:
+            inputs["wannier_folder"] = generate_folder_data(list(wannier_files))
+        else:
+            inputs["wannier_folder_up"] = generate_folder_data(list(wannier_files))
+            inputs["wannier_folder_down"] = generate_folder_data(list(wannier_files))
+        return inputs
+
+    return factory
+
+
+@pytest.fixture
+def generate_calcjob(tmp_path, generate_inputs):
+    """Return a factory to instantiate a `CalcJob` and run `prepare_for_submission`."""
+
+    def factory(
+        process_class: CalcJob, inputs: dict | None = None, return_process: bool = False
+    ):
+        inputs = generate_inputs() if inputs is None else inputs
+        manager = get_manager()
+        runner = manager.get_runner()
+        process = instantiate_process(runner, process_class, **inputs)
+
+        if return_process:
+            return process
+
+        calc_info = process.prepare_for_submission(Folder(tmp_path))
+        return tmp_path, calc_info
+
+    return factory
+
+
+@pytest.fixture
+def generate_calc_job_node(aiida_localhost):
+    """Return a factory to build a `CalcJobNode` with a `retrieved` output node."""
+
+    def factory(process_class: type[CalcJob], retrieved: FolderData) -> CalcJobNode:
+        process_type = f"{process_class.__module__}.{process_class.__name__}"
+        node = CalcJobNode(computer=aiida_localhost, process_type=process_type)
+        node.set_option("resources", {"num_machines": 1, "num_mpiprocs_per_machine": 1})
+        node.store()
+
+        retrieved.base.links.add_incoming(
+            node, link_type=LinkType.CREATE, link_label="retrieved"
+        )
+        retrieved.store()
+
+        return node
+
+    return factory
