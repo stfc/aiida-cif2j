@@ -36,7 +36,7 @@ where = ["src"]
 
 
 [project.entry-points."aiida.workflows"]
-
+"cif2j.wannier_tb2j" = "aiida_cif2j.workflows.wannier:WannierTB2JWorkChain"
 
 [project.entry-points."aiida.data"]
 

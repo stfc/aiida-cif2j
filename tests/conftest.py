@@ -4,19 +4,22 @@ import io
 import pathlib
 
 import pytest
+from aiida.common import AttributeDict
 from aiida.common.folders import Folder
 from aiida.common.links import LinkType
-from aiida.engine import CalcJob
+from aiida.engine import CalcJob, ProcessState, WorkChain
 from aiida.engine.utils import instantiate_process
 from aiida.manage.manager import get_manager
 from aiida.orm import (
     CalcJobNode,
+    Data,
     Dict,
     FolderData,
     InstalledCode,
     List,
     SinglefileData,
     StructureData,
+    WorkChainNode,
 )
 from aiida_wannier90_workflows.data.structure import MagneticStructureData
 
@@ -158,10 +161,14 @@ def generate_calcjob(tmp_path, generate_inputs):
 def generate_calc_job_node(aiida_localhost):
     """Return a factory to build a `CalcJobNode` with a `retrieved` output node."""
 
-    def factory(process_class: type[CalcJob], retrieved: FolderData) -> CalcJobNode:
+    def factory(
+        process_class: type[CalcJob], retrieved: FolderData, exit_status: int = 0
+    ) -> CalcJobNode:
         process_type = f"{process_class.__module__}.{process_class.__name__}"
         node = CalcJobNode(computer=aiida_localhost, process_type=process_type)
         node.set_option("resources", {"num_machines": 1, "num_mpiprocs_per_machine": 1})
+        node.set_process_state(ProcessState.FINISHED)
+        node.set_exit_status(exit_status)
         node.store()
 
         retrieved.base.links.add_incoming(
@@ -170,5 +177,59 @@ def generate_calc_job_node(aiida_localhost):
         retrieved.store()
 
         return node
+
+    return factory
+
+
+@pytest.fixture
+def generate_workchain_node():
+    """Return a factory to build a finished `WorkChainNode` with RETURN output links."""
+
+    def factory(
+        exit_status: int = 0, outputs: dict[str, Data] | None = None
+    ) -> WorkChainNode:
+        node = WorkChainNode()
+        node.set_process_state(ProcessState.FINISHED)
+        node.set_exit_status(exit_status)
+        node.store()
+
+        for link_label, output_node in (outputs or {}).items():
+            output_node.store()
+            output_node.base.links.add_incoming(
+                node, link_type=LinkType.RETURN, link_label=link_label
+            )
+
+        return node
+
+    return factory
+
+
+@pytest.fixture
+def generate_workchain_process():
+    """Return a factory to build a bare `WorkChain` instance to unit-test step methods.
+
+    This bypasses `Process.__init__`/`on_create`, avoiding the need to satisfy the full
+    input specification of the `WorkChain` (which may expose inputs from other, heavier
+    processes). Only the private attributes touched by `self.inputs`, `self.ctx`,
+    `self.out` and `self.report` are set up; `self.submit` is not usable on the result.
+    """
+
+    def factory(
+        process_class: type[WorkChain],
+        inputs: dict | None = None,
+        ctx: dict | None = None,
+    ) -> WorkChain:
+        from plumpy.event_helper import EventHelper
+        from plumpy.process_listener import ProcessListener
+
+        process = object.__new__(process_class)
+        process._parsed_inputs = AttributeDict(inputs or {})
+        process._context = AttributeDict(ctx or {})
+        process._outputs = {}
+        process._logger = None
+        process._event_helper = EventHelper(ProcessListener)
+        process._node = WorkChainNode()
+        process._node.store()
+        return process
 
     return factory
