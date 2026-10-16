@@ -9,7 +9,6 @@ description = "AiiDA workflow plugin for calculating magnetic exchange interacti
 authors = [
     { name = "Dr. Benjamin T. Speake", email = "benjamin.speake@stfc.ac.uk" },
 ]
-dependencies = ["aiida-core>=2.7"]
 readme = "README.md"
 license = { file = "LICENSE" }
 keywords = ["aiida", "magnetic exchange"]
@@ -21,6 +20,7 @@ classifiers = [
     "Development Status :: 3 - Alpha",
 ]
 requires-python = ">=3.10"
+dependencies = ["aiida-core>=2.7,<3"]
 
 [project.urls]
 Source = "https://github.com/stfc/aiida-cif2j"
