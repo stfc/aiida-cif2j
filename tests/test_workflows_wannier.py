@@ -657,6 +657,70 @@ def test_get_builder_from_protocol_magnetic_elements(
     assert builder.magnetic_elements.get_list() == ["Fe"]
 
 
+def test_get_builder_from_protocol_cross_computer_warns(
+    generate_wannier_bands_builder,
+    generate_structure,
+    wannier_tb2j_code,
+    aiida_code_installed,
+    aiida_computer,
+    caplog,
+):
+    """`pw2wannier90` and `wannier90` on different computers should log a warning.
+
+    AiiDA cannot copy files directly between two different remote machines, so
+    `wannier90.x` must run on the same computer as the preceding `pw2wannier90.x`
+    step; otherwise the eventual `Wannier90Calculation` hangs and fails at runtime.
+    """
+    structure = generate_structure()
+    fake_builder = generate_wannier_bands_builder(structure)
+    remote_computer = aiida_computer(label="remote", hostname="remote.example.com")
+    fake_builder.pw2wannier90.pw2wannier90.code = aiida_code_installed(
+        default_calc_job_plugin="quantumespresso.pw2wannier90", computer=remote_computer
+    )
+
+    with patch.object(
+        Wannier90BandsWorkChain, "get_builder_from_protocol", return_value=fake_builder
+    ):
+        WannierTB2JWorkChain.get_builder_from_protocol(
+            codes={"pw": "x", "tb2j": wannier_tb2j_code()},
+            structure=structure,
+            pseudo_family="x",
+            spin_type=SpinType.NONE,
+        )
+
+    assert any(
+        record.levelname == "WARNING" and "different computers" in record.message
+        for record in caplog.records
+    )
+
+
+def test_get_builder_from_protocol_same_computer_no_warning(
+    generate_wannier_bands_builder,
+    generate_structure,
+    wannier_tb2j_code,
+    aiida_code_installed,
+    caplog,
+):
+    """`pw2wannier90` and `wannier90` on the same computer should not warn."""
+    structure = generate_structure()
+    fake_builder = generate_wannier_bands_builder(structure)
+    fake_builder.pw2wannier90.pw2wannier90.code = aiida_code_installed(
+        default_calc_job_plugin="quantumespresso.pw2wannier90"
+    )
+
+    with patch.object(
+        Wannier90BandsWorkChain, "get_builder_from_protocol", return_value=fake_builder
+    ):
+        WannierTB2JWorkChain.get_builder_from_protocol(
+            codes={"pw": "x", "tb2j": wannier_tb2j_code()},
+            structure=structure,
+            pseudo_family="x",
+            spin_type=SpinType.NONE,
+        )
+
+    assert not any(record.levelname == "WARNING" for record in caplog.records)
+
+
 def test_get_builder_from_protocol_magnetic_elements_omitted(
     generate_wannier_bands_builder, generate_structure, wannier_tb2j_code
 ):

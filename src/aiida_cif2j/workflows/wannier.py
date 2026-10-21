@@ -1,5 +1,6 @@
 """AiiDA WorkChain for combining Wannier90 and TB2J into a single workflow."""
 
+import logging
 from collections.abc import Mapping
 
 from aiida import orm
@@ -21,6 +22,8 @@ from aiida_cif2j.workflows.utils import (
     total_magnetization,
     validate_chemical_symbols,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class WannierTB2JWorkChain(WorkChain):
@@ -387,6 +390,31 @@ class WannierTB2JWorkChain(WorkChain):
             projection_type=projection_type,
             **kwargs,
         )
+
+        # AiiDA's transport layer cannot copy files directly between two different
+        # remote machines: `wannier90.x` reads the `pw2wannier90.x` outputs via a
+        # remote-folder copy rather than re-uploading them, so the two codes must sit
+        # on the same computer or the Wannier90Calculation will hang, retry the
+        # transport task a few times, then pause with a `NotImplementedError`.
+        pw2wannier90_code = wannier_builder.pw2wannier90.pw2wannier90.code  # type: ignore
+        wannier90_code = wannier_builder.wannier90.wannier90.code  # type: ignore
+        if (
+            pw2wannier90_code is not None
+            and wannier90_code is not None
+            and pw2wannier90_code.computer.pk != wannier90_code.computer.pk
+        ):
+            _LOGGER.warning(
+                "'pw2wannier90' code '%s' runs on computer '%s' but 'wannier90' code "
+                "'%s' runs on computer '%s'; AiiDA cannot copy the pw2wannier90 "
+                "outputs directly between two different computers, so the "
+                "Wannier90Calculation step will fail. Install/configure 'wannier90.x' "
+                "on '%s' and pass that code instead.",
+                pw2wannier90_code.label,
+                pw2wannier90_code.computer.label,
+                wannier90_code.label,
+                wannier90_code.computer.label,
+                pw2wannier90_code.computer.label,
+            )
 
         # Create builder for this WorkChain from constituents
         builder = cls.get_builder()
