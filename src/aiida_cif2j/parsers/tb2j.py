@@ -20,6 +20,14 @@ class TB2JParser(Parser):
             return self.exit_codes.ERROR_OUTPUT_PICKLE_MISSING
 
         with filepath.open("rb") as handle:
-            self.out("TB2J_pickle_file", SinglefileData(file=handle, filename=filename))
+            self.out(
+                "TB2J_pickle_file",
+                SinglefileData(
+                    file=handle,
+                    filename=filename,
+                    label="TB2J Results File",
+                    description="Python pickle file containing results from TB2J.",
+                ),
+            )
 
         return ExitCode(0)
