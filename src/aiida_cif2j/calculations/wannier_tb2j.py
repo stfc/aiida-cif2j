@@ -5,7 +5,7 @@ from types import UnionType
 from aiida.common import CalcInfo, CodeInfo, InputValidationError
 from aiida.common.folders import Folder
 from aiida.engine import CalcJob, CalcJobProcessSpec
-from aiida.orm import Dict, FolderData, List, StructureData
+from aiida.orm import Dict, FolderData, List, SinglefileData, StructureData
 from aiida.orm.nodes.data.structure import validate_symbols_tuple
 from pymatgen.io.vasp import Poscar
 
@@ -78,12 +78,12 @@ class WannierTB2JCalculation(CalcJob):
         )
 
         ## Outputs
-        # spec.output(
-        #     "TB2J_pickle_file",
-        #     valid_type=SinglefileData,
-        #     required=True,
-        #     help="The TB2J output python pickle file.",
-        # )
+        spec.output(
+            "TB2J_pickle_file",
+            valid_type=SinglefileData,
+            required=True,
+            help="The TB2J output python pickle file.",
+        )
 
         ## Metadata
         spec.inputs["metadata"]["options"]["resources"].default = {
@@ -124,7 +124,10 @@ class WannierTB2JCalculation(CalcJob):
 
         calc_info = CalcInfo()
         calc_info.codes_info = [code_info]
-        calc_info.retrieve_list = [WannierTB2JCalculation._PICKLE_FILE]
+        # Retrieved only into a temporary folder for parsing (see `TB2JParser`), not
+        # into `retrieved`, so its content isn't duplicated in the `TB2J_pickle_file`
+        # output.
+        calc_info.retrieve_temporary_list = [WannierTB2JCalculation._PICKLE_FILE]
         if "wannier_folder" in self.inputs:
             calc_info.local_copy_list = self._collect_wannier_files(
                 self.inputs.wannier_folder, "wannier90"

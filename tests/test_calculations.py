@@ -21,7 +21,7 @@ def test_spinor_defaults(generate_calcjob):
     """Test the command line and file lists for a default spinor calculation."""
     _, calc_info = generate_calcjob(WannierTB2JCalculation)
 
-    assert calc_info.retrieve_list == ["TB2J.pickle"]
+    assert calc_info.retrieve_temporary_list == ["TB2J.pickle"]
     assert calc_info.codes_info[0].cmdline_params == [
         "--path",
         ".",

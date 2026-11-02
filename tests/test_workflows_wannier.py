@@ -1,5 +1,6 @@
 """Tests for the `WannierTB2JWorkChain`."""
 
+import io
 from unittest.mock import patch
 
 import pytest
@@ -17,7 +18,7 @@ def test_workchain_spec():
     `tb2j_options` must not be a top-level input (it does not exist; `run_tb2j` used
     to reference it directly and crash), `tb2j.parameters` must not require 'efermi'
     up front (that conflicts with the auto-fill-from-SCF logic in `run_tb2j`), and
-    the declared 'retrieved' output must actually be produced (see
+    the declared 'TB2J_pickle_file' output must actually be produced (see
     `test_collate_results_success`).
     """
     spec = WannierTB2JWorkChain.spec()
@@ -25,7 +26,8 @@ def test_workchain_spec():
     assert "tb2j_options" not in spec.inputs
     assert "metadata" in spec.inputs["tb2j"]
     assert spec.inputs["tb2j"]["parameters"].validator is None
-    assert spec.outputs["retrieved"].required
+    assert "retrieved" not in spec.outputs
+    assert spec.outputs["TB2J_pickle_file"].required
 
 
 @pytest.mark.parametrize(
@@ -316,13 +318,20 @@ def test_collate_results_tb2j_failed(
 def test_collate_results_success(
     generate_workchain_process, generate_calc_job_node, generate_folder_data
 ):
-    """A successful TB2J calculation should produce 'retrieved' and finish ok."""
+    """A successful TB2J calculation should produce 'TB2J_pickle_file' and finish ok."""
     from aiida.engine import ExitCode
+    from aiida.orm import SinglefileData
 
     from aiida_cif2j.calculations.wannier_tb2j import WannierTB2JCalculation
 
     retrieved = generate_folder_data(["TB2J.pickle"])
-    tb2j_node = generate_calc_job_node(WannierTB2JCalculation, retrieved, exit_status=0)
+    pickle_file = SinglefileData(file=io.BytesIO(b""), filename="TB2J.pickle")
+    tb2j_node = generate_calc_job_node(
+        WannierTB2JCalculation,
+        retrieved,
+        exit_status=0,
+        outputs={"TB2J_pickle_file": pickle_file},
+    )
     process = generate_workchain_process(
         WannierTB2JWorkChain, ctx={"tb2j_step": tb2j_node}
     )
@@ -330,7 +339,9 @@ def test_collate_results_success(
     result = process.collate_results()
 
     assert result == ExitCode(0)
-    assert process._outputs["retrieved"].pk == retrieved.pk
+    assert "retrieved" not in process._outputs
+    assert process._outputs["TB2J_pickle_file"].pk == pickle_file.pk
+    assert process._outputs["TB2J_pickle_file"].pk == pickle_file.pk
 
 
 def test_get_builder_from_protocol_missing_tb2j_code(generate_structure):

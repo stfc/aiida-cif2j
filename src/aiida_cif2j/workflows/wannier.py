@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from aiida import orm
 from aiida.common import AttributeDict
 from aiida.engine import ExitCode, ProcessBuilder, ToContext, WorkChain, if_
-from aiida.orm import Dict, FolderData, List, SinglefileData, StructureData
+from aiida.orm import Dict, List, SinglefileData, StructureData
 from aiida_quantumespresso.common.types import ElectronicType, SpinType
 from aiida_wannier90_workflows.common.types import WannierProjectionType
 from aiida_wannier90_workflows.data.structure import MagneticStructureData
@@ -70,7 +70,14 @@ class WannierTB2JWorkChain(WorkChain):
             help="Elements for which the exchange interaction is considered.",
         )
 
-        spec.output("retrieved", valid_type=FolderData, required=True)
+        # spec.output("retrieved", valid_type=FolderData, required=True)
+        spec.output(
+            "TB2J_pickle_file",
+            valid_type=SinglefileData,
+            required=True,
+            help="The TB2J output pickle file containing the magnetic exchange "
+            "parameters.",
+        )
 
         spec.exit_code(
             420, "ERROR_WANNIER90_WC", message="The Wannier90BandsWorkChain failed."
@@ -246,10 +253,8 @@ class WannierTB2JWorkChain(WorkChain):
         if not self.ctx.tb2j_step.is_finished_ok:
             return self.exit_codes.ERROR_TB2J_PLUGIN
 
-        # if "exchange" in self.ctx.tb2j_step.outputs:
-        #     self.out("exchange", self.ctx.tb2j_step.outputs.exchange)
-
-        self.out("retrieved", self.ctx.tb2j_step.outputs.retrieved)
+        # self.out("retrieved", self.ctx.tb2j_step.outputs.retrieved)
+        self.out("TB2J_pickle_file", self.ctx.tb2j_step.outputs.TB2J_pickle_file)
 
         # wannier90_outputs = self.ctx.wannier90.outputs
         # if "scf" in wannier90_outputs and (

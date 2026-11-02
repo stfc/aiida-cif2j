@@ -164,7 +164,10 @@ def generate_calc_job_node(aiida_localhost):
     """Return a factory to build a `CalcJobNode` with a `retrieved` output node."""
 
     def factory(
-        process_class: type[CalcJob], retrieved: FolderData, exit_status: int = 0
+        process_class: type[CalcJob],
+        retrieved: FolderData,
+        exit_status: int = 0,
+        outputs: dict[str, Data] | None = None,
     ) -> CalcJobNode:
         process_type = f"{process_class.__module__}.{process_class.__name__}"
         node = CalcJobNode(computer=aiida_localhost, process_type=process_type)
@@ -177,6 +180,12 @@ def generate_calc_job_node(aiida_localhost):
             node, link_type=LinkType.CREATE, link_label="retrieved"
         )
         retrieved.store()
+
+        for link_label, output_node in (outputs or {}).items():
+            output_node.base.links.add_incoming(
+                node, link_type=LinkType.CREATE, link_label=link_label
+            )
+            output_node.store()
 
         return node
 
