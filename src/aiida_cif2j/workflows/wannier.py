@@ -383,6 +383,12 @@ class WannierTB2JWorkChain(WorkChain):
         # retrieve_hamiltonian in the kwargs must be True for Wannier90 to write the
         # required _tb.dat/_hr.dat/_centres.xyz files.
         if "retrieve_hamiltonian" in kwargs:
+            if not kwargs["retrieve_hamiltonian"]:
+                _LOGGER.warning(
+                    "The `retrieve_hamiltonian` input must be `True` to "
+                    "correctly facilitate the Wannier90 calculation. "
+                    "Overwriting user input..."
+                )
             kwargs.pop("retrieve_hamiltonian")
 
         wannier_builder = Wannier90BandsWorkChain.get_builder_from_protocol(
