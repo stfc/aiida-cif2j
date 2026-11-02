@@ -380,6 +380,11 @@ class WannierTB2JWorkChain(WorkChain):
                 structure_node
             )
 
+        # retrieve_hamiltonian in the kwargs must be True for Wannier90 to write the
+        # required _tb.dat/_hr.dat/_centres.xyz files.
+        if "retrieve_hamiltonian" in kwargs:
+            kwargs.pop("retrieve_hamiltonian")
+
         wannier_builder = Wannier90BandsWorkChain.get_builder_from_protocol(
             codes=codes,
             structure=structure_node,
@@ -388,6 +393,7 @@ class WannierTB2JWorkChain(WorkChain):
             electronic_type=electronic_type,
             spin_type=spin_type,
             projection_type=projection_type,
+            retrieve_hamiltonian=True,
             **kwargs,
         )
 
