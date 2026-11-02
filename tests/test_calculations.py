@@ -1,9 +1,20 @@
 """Tests for the `WannierTB2JCalculation` CalcJob."""
 
+import pathlib
+
 import pytest
 from aiida.common import InputValidationError
 
 from aiida_cif2j.calculations.wannier_tb2j import WannierTB2JCalculation
+
+
+def test_writes_poscar_file(generate_calcjob):
+    """The `structure` input should be written out as a `POSCAR` file."""
+    tmp_path, _ = generate_calcjob(WannierTB2JCalculation)
+
+    poscar = pathlib.Path(tmp_path) / "POSCAR"
+    assert poscar.exists()
+    assert "Fe" in poscar.read_text()
 
 
 def test_spinor_defaults(generate_calcjob):

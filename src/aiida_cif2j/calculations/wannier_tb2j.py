@@ -7,6 +7,7 @@ from aiida.common.folders import Folder
 from aiida.engine import CalcJob, CalcJobProcessSpec
 from aiida.orm import Dict, FolderData, List, StructureData
 from aiida.orm.nodes.data.structure import validate_symbols_tuple
+from pymatgen.io.vasp import Poscar
 
 
 class WannierTB2JCalculation(CalcJob):
@@ -117,6 +118,9 @@ class WannierTB2JCalculation(CalcJob):
         code_info = CodeInfo()
         code_info.code_uuid = self.inputs.code.uuid
         code_info.cmdline_params = self.build_cmdline_parameters()
+
+        pymatgen_structure = self.inputs.structure.get_pymatgen_structure()
+        Poscar(pymatgen_structure).write_file(folder.get_abs_path("POSCAR"))
 
         calc_info = CalcInfo()
         calc_info.codes_info = [code_info]
