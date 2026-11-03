@@ -47,14 +47,14 @@ jobs:
             - name: Run test suite with coverage
               if: contains(matrix.python-version, '3.12')
               run: |
-                pip install .[dev]
+                pip install ".[dev,tb2j]"
                 pip install "aiida-wannier90 @ git+https://github.com/aiidateam/aiida-wannier90.git@v2.2.0" "aiida-wannier90-workflows @ git+https://github.com/aiidateam/aiida-wannier90-workflows.git@v3.1.0"
                 pytest -n auto --cov=aiida_cif2j --cov-report=xml:coverage.xml
 
             - name: Run test suite without coverage
               if: ${{ !contains(matrix.python-version, '3.12') }}
               run: |
-                pip install .[dev]
+                pip install ".[dev,tb2j]"
                 pip install "aiida-wannier90 @ git+https://github.com/aiidateam/aiida-wannier90.git@v2.2.0" "aiida-wannier90-workflows @ git+https://github.com/aiidateam/aiida-wannier90-workflows.git@v3.1.0"
                 pytest -n auto
 
