@@ -27,6 +27,29 @@ Each Wannier90 folder must contain either the ``aiida_tb.dat`` tight-binding fil
 Wannier90 parameters), or both ``aiida_hr.dat`` and ``aiida_centres.xyz`` (``write_hr=True`` and
 ``write_xyz=True``).
 
+Supplying atomic positions
+----------------------------
+
+``wann2J.py`` needs an atomic-structure/position source. There are three ways to give it one via
+``structure``/``use_wannier_structure``:
+
+* **Default** — give ``structure`` as a ``StructureData``. It is converted and written out as a ``POSCAR``
+  file, and also used to auto-derive ``kmesh`` from the unit cell dimensions when ``kmesh`` is not given
+  explicitly in ``parameters``.
+* **Direct posfile** — give ``structure`` as a ``SinglefileData`` containing any ASE-readable structure
+  file. It is staged under its own filename and passed through to ``wann2J.py`` almost verbatim as the
+  posfile. Since the cell is not parsed out of the file, ``kmesh`` **must** be given explicitly in
+  ``parameters`` in this case.
+* **Wannier90 ``.win`` fallback** — set ``use_wannier_structure=True``. No posfile is written at all;
+  instead the Wannier90 ``.win`` file is copied out of the given ``wannier_folder``/``wannier_folder_up``,
+  and ``wann2J.py`` falls back to reading atomic positions from it directly (an officially supported TB2J
+  behaviour since v0.6.2, triggered whenever no readable file exists at the posfile path). This requires the
+  upstream ``Wannier90Calculation``'s retrieve settings to include the ``.win`` input file, e.g.
+  ``settings["additional_retrieve_list"] = ["*.win"]``. A ``StructureData`` may still be given alongside
+  ``use_wannier_structure=True`` purely to auto-derive ``kmesh``; a ``SinglefileData`` ``structure`` may not
+  be combined with ``use_wannier_structure=True``, and ``kmesh`` must be given explicitly whenever
+  ``structure`` is absent or is not a ``StructureData``.
+
 Input ports
 -----------
 
@@ -39,10 +62,17 @@ Input ports
      - Required
      - Description
    * - ``structure``
-     - ``StructureData``
-     - yes
-     - Used to write the ``POSCAR`` file read by ``wann2J.py``, and to set up the ``kmesh`` variable based
-       on the unit cell dimensions if not given explicitly.
+     - ``StructureData`` | ``SinglefileData``
+     - no
+     - Either a ``StructureData`` (default; written out as ``POSCAR``) or a ``SinglefileData`` containing a
+       direct, ASE-readable posfile. Required unless ``use_wannier_structure=True`` (with ``kmesh`` given
+       explicitly). See `Supplying atomic positions`_.
+   * - ``use_wannier_structure``
+     - ``bool``
+     - no (default ``False``)
+     - If ``True``, no posfile is written; instead the Wannier90 ``.win`` file is copied from the given
+       ``wannier_folder``/``wannier_folder_up`` so ``wann2J.py`` reads positions from it directly. See
+       `Supplying atomic positions`_.
    * - ``elements``
      - ``List``
      - yes
@@ -183,10 +213,9 @@ Outputs
    * - Output
      - Type
      - Description
-   * - ``retrieved``
-     - ``FolderData``
-     - The retrieved calculation folder, containing the ``TB2J.pickle`` results file produced by
-       ``wann2J.py``.
+   * - ``TB2J_pickle_file``
+     - ``SinglefileData``
+     - The ``TB2J.pickle`` results file produced by ``wann2J.py``.
 
 Exit codes
 ----------

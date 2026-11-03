@@ -111,6 +111,18 @@ def wannier_tb2j_code(aiida_code_installed):
 
 
 @pytest.fixture
+def generate_posfile_data():
+    """Return a factory to build a `SinglefileData` posfile with a name/content."""
+
+    def factory(
+        filename: str = "structure.xyz", content: bytes = b""
+    ) -> SinglefileData:
+        return SinglefileData(io.BytesIO(content), filename=filename)
+
+    return factory
+
+
+@pytest.fixture
 def generate_inputs(wannier_tb2j_code, generate_structure, generate_folder_data):
     """Return a factory for a dictionary of inputs for the `WannierTB2JCalculation`."""
 
@@ -118,16 +130,22 @@ def generate_inputs(wannier_tb2j_code, generate_structure, generate_folder_data)
         spinor: bool = True,
         elements: tuple[str, ...] = ("Fe",),
         parameters: dict | None = None,
-        structure: StructureData | None = None,
+        structure: StructureData | SinglefileData | None = None,
         wannier_files: tuple[str, ...] = ("aiida_tb.dat",),
+        include_structure: bool = True,
+        use_wannier_structure: bool = False,
     ) -> dict:
         parameters = {"efermi": 0.0} if parameters is None else parameters
         inputs = {
             "code": wannier_tb2j_code(),
             "elements": List(list(elements)),
             "parameters": Dict(parameters),
-            "structure": structure if structure is not None else generate_structure(),
+            "use_wannier_structure": use_wannier_structure,
         }
+        if include_structure:
+            inputs["structure"] = (
+                structure if structure is not None else generate_structure()
+            )
         if spinor:
             inputs["wannier_folder"] = generate_folder_data(list(wannier_files))
         else:

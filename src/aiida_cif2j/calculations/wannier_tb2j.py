@@ -70,11 +70,28 @@ class WannierTB2JCalculation(CalcJob):
         )
         spec.input(
             "structure",
-            valid_type=StructureData,
-            required=True,
-            help="Used to write the POSITION file read by wann2J.py, and to set up the "
-            "'kmesh' variable based on the unit cell dimensions if not given "
-            "explicitly.",
+            valid_type=(StructureData, SinglefileData),
+            required=False,
+            help="Either a `StructureData`, used to write the POSCAR file read by "
+            "wann2J.py and to set up the 'kmesh' variable based on the unit cell "
+            "dimensions if not given explicitly; or a `SinglefileData` containing "
+            "an ASE-readable structure file, staged under its own filename and "
+            "passed through to wann2J.py almost verbatim as the posfile ('kmesh' "
+            "must then be given explicitly in 'parameters', since the cell is not "
+            "parsed from the file). Required unless "
+            "'use_wannier_structure=True' (with 'kmesh' given explicitly).",
+        )
+        spec.input(
+            "use_wannier_structure",
+            valid_type=bool,
+            default=False,
+            non_db=True,
+            help="If True, do not write a POSCAR/posfile at all; instead copy the "
+            "Wannier90 '.win' file from the given 'wannier_folder' (or "
+            "'wannier_folder_up') into the working directory, so wann2J.py falls "
+            "back to reading atomic positions from '.win' directly. 'structure', "
+            "if given, must then be a 'StructureData' (used only for 'kmesh' "
+            "derivation), not a 'SinglefileData'.",
         )
 
         ## Outputs
@@ -119,8 +136,38 @@ class WannierTB2JCalculation(CalcJob):
         code_info.code_uuid = self.inputs.code.uuid
         code_info.cmdline_params = self.build_cmdline_parameters()
 
-        pymatgen_structure = self.inputs.structure.get_pymatgen_structure()
-        Poscar(pymatgen_structure).write_file(folder.get_abs_path("POSCAR"))
+        structure = self.inputs.structure if "structure" in self.inputs else None
+
+        local_copy_list = []
+        if self.inputs.use_wannier_structure:
+            pass  # nothing written/staged here; `.win` is staged below instead.
+        elif isinstance(structure, SinglefileData):
+            local_copy_list.append(
+                (structure.uuid, structure.filename, structure.filename)
+            )
+        else:
+            pymatgen_structure = structure.get_pymatgen_structure()
+            Poscar(pymatgen_structure).write_file(folder.get_abs_path("POSCAR"))
+
+        if "wannier_folder" in self.inputs:
+            local_copy_list += self._collect_wannier_files(
+                self.inputs.wannier_folder, "wannier90"
+            )
+            if self.inputs.use_wannier_structure:
+                local_copy_list += self._collect_win_file(
+                    self.inputs.wannier_folder, "wannier90"
+                )
+        else:
+            local_copy_list += self._collect_wannier_files(
+                self.inputs.wannier_folder_up, "wannier90.up"
+            )
+            local_copy_list += self._collect_wannier_files(
+                self.inputs.wannier_folder_down, "wannier90.dn"
+            )
+            if self.inputs.use_wannier_structure:
+                local_copy_list += self._collect_win_file(
+                    self.inputs.wannier_folder_up, "wannier90.up"
+                )
 
         calc_info = CalcInfo()
         calc_info.codes_info = [code_info]
@@ -128,17 +175,7 @@ class WannierTB2JCalculation(CalcJob):
         # into `retrieved`, so its content isn't duplicated in the `TB2J_pickle_file`
         # output.
         calc_info.retrieve_temporary_list = [WannierTB2JCalculation._PICKLE_FILE]
-        if "wannier_folder" in self.inputs:
-            calc_info.local_copy_list = self._collect_wannier_files(
-                self.inputs.wannier_folder, "wannier90"
-            )
-        else:
-            calc_info.local_copy_list = self._collect_wannier_files(
-                self.inputs.wannier_folder_up, "wannier90.up"
-            )
-            calc_info.local_copy_list += self._collect_wannier_files(
-                self.inputs.wannier_folder_down, "wannier90.dn"
-            )
+        calc_info.local_copy_list = local_copy_list
 
         return calc_info
 
@@ -167,6 +204,9 @@ class WannierTB2JCalculation(CalcJob):
             from numpy import ceil
             from numpy.linalg import norm
 
+            # `self.inputs.structure` is guaranteed present and a `StructureData`
+            # here by `_validate_inputs`, which requires it whenever `kmesh` is not
+            # given explicitly.
             structure = self.inputs.structure
             lattice_parameters = norm(structure.cell, axis=-1)
             kmesh = ceil(supercell_size / lattice_parameters).astype(int).tolist()
@@ -182,11 +222,15 @@ class WannierTB2JCalculation(CalcJob):
                 "wannier90.dn",
             ]
 
+        structure = self.inputs.structure if "structure" in self.inputs else None
+        posfile_name = (
+            structure.filename if isinstance(structure, SinglefileData) else "POSCAR"
+        )
         cmdline_params = [
             "--path",
             ".",
             "--posfile",
-            "POSCAR",
+            posfile_name,
             "--output_path",
             ".",
         ] + cmdline_params
@@ -221,6 +265,38 @@ class WannierTB2JCalculation(CalcJob):
                 "Either 'wannier_folder' or both 'wannier_folder_up' and "
                 "'wannier_folder_down' must be given."
             )
+
+        use_wannier_structure = value["use_wannier_structure"]
+        structure = value.get("structure")
+        is_structure_data = isinstance(structure, StructureData)
+        is_posfile = isinstance(structure, SinglefileData)
+
+        if use_wannier_structure and is_posfile:
+            return (
+                "'structure' cannot be a file when 'use_wannier_structure=True'; "
+                "give a 'StructureData' (used only for 'kmesh' derivation) or omit "
+                "'structure' entirely and give 'kmesh' explicitly in 'parameters'."
+            )
+
+        parameters_node = value.get("parameters")
+        kmesh_given_explicitly = (
+            parameters_node is not None and "kmesh" in parameters_node.get_dict()
+        )
+
+        if not kmesh_given_explicitly and not is_structure_data:
+            return (
+                "'kmesh' must be given explicitly in 'parameters' unless "
+                "'structure' is a 'StructureData' (used to auto-derive 'kmesh' "
+                "from the unit cell dimensions); a file-based 'structure' does "
+                "not support this yet."
+            )
+
+        if structure is None and not use_wannier_structure:
+            return (
+                "'structure' is required unless 'use_wannier_structure=True' "
+                "(with 'kmesh' given explicitly in 'parameters')."
+            )
+
         return None
 
     @staticmethod
@@ -285,6 +361,17 @@ class WannierTB2JCalculation(CalcJob):
             )
 
         return local_copy_list
+
+    @staticmethod
+    def _collect_win_file(wannier_folder, target_prefix):
+        if "aiida.win" not in set(wannier_folder.list_object_names()):
+            raise InputValidationError(
+                f"The FolderData<{wannier_folder.pk}> does not contain 'aiida.win', "
+                "needed for 'use_wannier_structure=True' (ensure the upstream "
+                "Wannier90Calculation's retrieve settings include the '.win' input "
+                "file, e.g. via settings['additional_retrieve_list'] = ['*.win'])."
+            )
+        return [(wannier_folder.uuid, "aiida.win", f"{target_prefix}.win")]
 
     @staticmethod
     def _as_cmdline_args(parameter, value):

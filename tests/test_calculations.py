@@ -221,3 +221,140 @@ def test_validate_parameters_errors(
 
     with pytest.raises(ValueError, match=message):
         generate_calcjob(WannierTB2JCalculation, inputs)
+
+
+def test_structure_file_writes_correct_file_and_cmdline(
+    generate_calcjob, generate_inputs, generate_posfile_data
+):
+    """A file `structure` is staged under its own name and passed via --posfile."""
+    posfile = generate_posfile_data(
+        filename="my_structure.xyz", content=b"3\nFe 0 0 0\n"
+    )
+    inputs = generate_inputs(
+        structure=posfile, parameters={"efermi": 0.0, "kmesh": [3, 3, 3]}
+    )
+    tmp_path, calc_info = generate_calcjob(WannierTB2JCalculation, inputs)
+
+    assert not (pathlib.Path(tmp_path) / "POSCAR").exists()
+    assert (posfile.uuid, "my_structure.xyz", "my_structure.xyz") in (
+        calc_info.local_copy_list
+    )
+
+    cmdline_params = calc_info.codes_info[0].cmdline_params
+    posfile_index = cmdline_params.index("--posfile")
+    assert cmdline_params[posfile_index + 1] == "my_structure.xyz"
+
+
+def test_structure_file_without_explicit_kmesh_raises(
+    generate_calcjob, generate_inputs, generate_posfile_data
+):
+    """A file `structure` requires `kmesh` to be given explicitly."""
+    inputs = generate_inputs(structure=generate_posfile_data())
+
+    with pytest.raises(ValueError, match="'kmesh' must be given explicitly"):
+        generate_calcjob(WannierTB2JCalculation, inputs)
+
+
+def test_use_wannier_structure_copies_win_spinor(generate_calcjob, generate_inputs):
+    """`use_wannier_structure=True` should copy `.win` and write no posfile (spinor)."""
+    inputs = generate_inputs(
+        wannier_files=("aiida_tb.dat", "aiida.win"),
+        use_wannier_structure=True,
+        include_structure=False,
+        parameters={"efermi": 0.0, "kmesh": [3, 3, 3]},
+    )
+    tmp_path, calc_info = generate_calcjob(WannierTB2JCalculation, inputs)
+
+    assert not (pathlib.Path(tmp_path) / "POSCAR").exists()
+    wannier_folder_uuid = inputs["wannier_folder"].uuid
+    assert (wannier_folder_uuid, "aiida.win", "wannier90.win") in (
+        calc_info.local_copy_list
+    )
+
+
+def test_use_wannier_structure_copies_win_collinear_up_only(
+    generate_calcjob, generate_inputs
+):
+    """In the collinear case, only `wannier_folder_up`'s `.win` should be copied."""
+    inputs = generate_inputs(
+        spinor=False,
+        wannier_files=("aiida_tb.dat", "aiida.win"),
+        use_wannier_structure=True,
+        include_structure=False,
+        parameters={"efermi": 0.0, "kmesh": [3, 3, 3]},
+    )
+    _, calc_info = generate_calcjob(WannierTB2JCalculation, inputs)
+
+    up_uuid = inputs["wannier_folder_up"].uuid
+    down_uuid = inputs["wannier_folder_down"].uuid
+    assert (up_uuid, "aiida.win", "wannier90.up.win") in calc_info.local_copy_list
+    assert not any(
+        entry[0] == down_uuid and entry[1] == "aiida.win"
+        for entry in calc_info.local_copy_list
+    )
+
+
+def test_use_wannier_structure_missing_win_raises(generate_calcjob, generate_inputs):
+    """Missing `.win` in the wannier folder should raise a clear error."""
+    inputs = generate_inputs(
+        wannier_files=("aiida_tb.dat",),
+        use_wannier_structure=True,
+        include_structure=False,
+        parameters={"efermi": 0.0, "kmesh": [3, 3, 3]},
+    )
+
+    with pytest.raises(InputValidationError, match="aiida.win"):
+        generate_calcjob(WannierTB2JCalculation, inputs)
+
+
+def test_use_wannier_structure_with_file_structure_raises(
+    generate_calcjob, generate_inputs, generate_posfile_data
+):
+    """`use_wannier_structure=True` together with a file `structure` is rejected."""
+    inputs = generate_inputs(
+        structure=generate_posfile_data(),
+        use_wannier_structure=True,
+        parameters={"efermi": 0.0, "kmesh": [3, 3, 3]},
+    )
+
+    with pytest.raises(ValueError, match="cannot be a file"):
+        generate_calcjob(WannierTB2JCalculation, inputs)
+
+
+def test_use_wannier_structure_without_structure_or_kmesh_raises(
+    generate_calcjob, generate_inputs
+):
+    """`use_wannier_structure=True` without `structure` still needs explicit `kmesh`."""
+    inputs = generate_inputs(use_wannier_structure=True, include_structure=False)
+
+    with pytest.raises(ValueError, match="'kmesh' must be given explicitly"):
+        generate_calcjob(WannierTB2JCalculation, inputs)
+
+
+def test_missing_structure_source_raises(generate_calcjob, generate_inputs):
+    """`structure` is required unless `use_wannier_structure=True`, even with kmesh."""
+    inputs = generate_inputs(
+        include_structure=False, parameters={"efermi": 0.0, "kmesh": [3, 3, 3]}
+    )
+
+    with pytest.raises(ValueError, match="'structure' is required"):
+        generate_calcjob(WannierTB2JCalculation, inputs)
+
+
+def test_structure_data_and_use_wannier_structure_both_given_allowed(
+    generate_calcjob, generate_inputs
+):
+    """A `StructureData` plus `use_wannier_structure=True` is valid (kmesh only)."""
+    inputs = generate_inputs(
+        wannier_files=("aiida_tb.dat", "aiida.win"), use_wannier_structure=True
+    )
+    tmp_path, calc_info = generate_calcjob(WannierTB2JCalculation, inputs)
+
+    assert not (pathlib.Path(tmp_path) / "POSCAR").exists()
+    wannier_folder_uuid = inputs["wannier_folder"].uuid
+    assert (wannier_folder_uuid, "aiida.win", "wannier90.win") in (
+        calc_info.local_copy_list
+    )
+    cmdline_params = calc_info.codes_info[0].cmdline_params
+    kmesh_index = cmdline_params.index("--kmesh")
+    assert cmdline_params[kmesh_index : kmesh_index + 4] == ["--kmesh", "7", "7", "7"]
