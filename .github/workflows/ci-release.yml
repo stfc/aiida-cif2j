@@ -56,7 +56,7 @@ jobs:
           artifacts: "dist/*"
           token: ${{ secrets.GITHUB_TOKEN }}
           draft: false 
-          prerelease: steps.check-prerelease.output.prerelease == 'true'
+          # prerelease: steps.check-prerelease.output.prerelease == 'true'
           skipIfReleaseExists: true 
           generateReleaseNotes: true 
 

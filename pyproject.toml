@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "aiida-cif2j"
-version = "0.0.1"
+version = "0.1.0"
 description = "AiiDA workflow plugin for calculating magnetic exchange interactions."
 authors = [
     { name = "Dr. Benjamin T. Speake", email = "benjamin.speake@stfc.ac.uk" },
@@ -17,13 +17,18 @@ classifiers = [
     "Programming Language :: Python 3",
     "Topic :: Scientific/Engineering",
     "Framework :: AiiDA",
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: OS Independent",
 ]
 requires-python = ">=3.10"
 dependencies = ["aiida-core>=2.7,<3", "pymatgen", "click"]
 
 [project.urls]
 Source = "https://github.com/stfc/aiida-cif2j"
+Documentation = "https://stfc.github.io/aiida-cif2j/"
+"Issue Tracker" = "https://github.com/stfc/aiida-cif2j/issues"
+
 
 [project.scripts]
 cif2j = "aiida_cif2j.cli:cli"
