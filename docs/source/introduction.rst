@@ -28,12 +28,13 @@ Optional: Wannier90 Workflows
 
 This project exposes :class:`~aiida_cif2j.workflows.wannier.WannierTB2JWorkChain`, a WorkChain which
 carries out the full process of calculating Wannier functions for a structure which are then directly fed
-into TB2J. This requires a third party package called ``aiida-wannier90-workflows``. At present the
-underlying package is not released on PyPI and must be installed from the git repository as follows:
+into TB2J. This requires two third party packages, ``aiida-wannier90`` and ``aiida-wannier90-workflows``.
+Neither is currently released on PyPI, so they must be installed from their git repositories. This plugin
+ships a CLI command to do this for you:
 
 .. code-block:: bash
 
-    pip install git+https://github.com/aiidateam/aiida-wannier90-workflows.git@v3.1.0
+    cif2j wannier90 install
 
 Requirements
 ~~~~~~~~~~~~~
