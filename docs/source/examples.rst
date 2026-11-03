@@ -92,3 +92,25 @@ auto-detection, pass ``magnetic_elements`` and/or ``tb2j_parameters`` to ``get_b
         magnetic_elements=["Fe"],
         tb2j_parameters={"efermi": 6.5, "kmesh": [5, 5, 5]},
     )
+
+Submitting from the command line
+---------------------------------
+
+Rather than writing a Python script, the same ``WannierTB2JWorkChain`` submission can be driven directly
+from the command line with ``cif2j wannier90 submit``:
+
+.. code-block:: bash
+
+    cif2j wannier90 submit structure.mcif \
+        --pw-code qe-pw@localhost \
+        --pw2wannier90-code qe-pw2wannier90@localhost \
+        --wannier90-code wannier90@localhost \
+        --tb2j-code tb2j@localhost \
+        --pseudo-family SSSP/1.3/PBE/efficiency
+
+This builds the WorkChain inputs via ``get_builder_from_protocol`` in exactly the same way as the script
+above, and submits the result to the AiiDA daemon. Options such as ``--spin-type``, ``--electronic-type``,
+``--projection-type``, ``--magnetic-element`` (repeatable) and ``--tb2j-parameters``/``--tb2j-options``
+(inline JSON, or ``@path/to/file.json``) expose the same arguments as the Python API. Pass ``--dry-run`` to
+build and print the inputs without submitting. Run ``cif2j wannier90 submit --help`` for the full list of
+options.
