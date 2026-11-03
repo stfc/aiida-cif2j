@@ -14,12 +14,12 @@ AIIDA_WANNIER90_WORKFLOWS_REQUIREMENT = (
 )
 
 
-@click.group()
-def wannier90():
+@click.group(name="wannier90")
+def wannier90_group():
     """Commands for the Wannier90 integration (`WannierTB2JWorkChain`)."""
 
 
-@wannier90.command("install")
+@wannier90_group.command("install")
 def install():
     """Install 'aiida-wannier90' and 'aiida-wannier90-workflows' from GitHub.
 
