@@ -21,13 +21,20 @@ def wannier90_group():
     """Commands for the Wannier90 integration (`WannierTB2JWorkChain`)."""
 
 
-@wannier90_group.command("install")
-def install():
+@wannier90_group.command(
+    "install",
+    context_settings={"ignore_unknown_options": True},
+)
+@click.argument("pip_args", nargs=-1, type=click.UNPROCESSED)
+def install(pip_args):
     """Install 'aiida-wannier90' and 'aiida-wannier90-workflows' from GitHub.
 
     Neither package is released on PyPI, so this installs the pinned versions that
     this project is developed and tested against directly from their git
     repositories, into the current Python environment.
+
+    Any extra PIP_ARGS are forwarded as-is to 'pip install', e.g. pass '--user' when
+    installing into an environment (such as AiiDAlab's) where this is required.
     """
     requirements = [AIIDA_WANNIER90_REQUIREMENT, AIIDA_WANNIER90_WORKFLOWS_REQUIREMENT]
 
@@ -37,7 +44,8 @@ def install():
 
     try:
         subprocess.run(
-            [sys.executable, "-m", "pip", "install", *requirements], check=True
+            [sys.executable, "-m", "pip", "install", *pip_args, *requirements],
+            check=True,
         )
     except subprocess.CalledProcessError as exception:
         raise click.ClickException(
