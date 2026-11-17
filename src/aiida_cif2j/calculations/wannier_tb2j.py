@@ -9,7 +9,11 @@ from aiida.orm import ArrayData, Dict, FolderData, List, SinglefileData, Structu
 from aiida.orm.nodes.data.structure import validate_symbols_tuple
 from pymatgen.io.vasp import Poscar
 
-from aiida_cif2j.data.exchange_coupling import ExchangeCouplingData
+from aiida_cif2j.data.exchange_coupling import (
+    AnisotropicExchangeData,
+    DMIVectorData,
+    ExchangeCouplingData,
+)
 
 
 class WannierTB2JCalculation(CalcJob):
@@ -116,6 +120,22 @@ class WannierTB2JCalculation(CalcJob):
             required=False,
             help="Per-atom magnetic moment vectors ('site_index', 'moments' "
             "arrays) parsed from the TB2J output pickle file.",
+        )
+        spec.output(
+            "dmi_vectors",
+            valid_type=DMIVectorData,
+            required=False,
+            help="Dzyaloshinskii-Moriya interaction vectors (one row per "
+            "magnetic-site pair), parsed from the TB2J output pickle file. "
+            "Only present if TB2J computed DMI for this run.",
+        )
+        spec.output(
+            "anisotropic_exchange",
+            valid_type=AnisotropicExchangeData,
+            required=False,
+            help="Anisotropic exchange tensors (one row per magnetic-site "
+            "pair), parsed from the TB2J output pickle file. Only present "
+            "if TB2J computed anisotropic exchange for this run.",
         )
 
         ## Metadata

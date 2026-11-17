@@ -52,6 +52,8 @@ where = ["src"]
 
 [project.entry-points."aiida.data"]
 "cif2j.exchange_coupling" = "aiida_cif2j.data.exchange_coupling:ExchangeCouplingData"
+"cif2j.dmi_vectors" = "aiida_cif2j.data.exchange_coupling:DMIVectorData"
+"cif2j.anisotropic_exchange" = "aiida_cif2j.data.exchange_coupling:AnisotropicExchangeData"
 
 
 [project.optional-dependencies]

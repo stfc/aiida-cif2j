@@ -30,6 +30,8 @@ def test_workchain_spec():
     assert spec.outputs["TB2J_pickle_file"].required
     assert spec.outputs["exchange_couplings"].required
     assert not spec.outputs["magnetic_moments"].required
+    assert not spec.outputs["dmi_vectors"].required
+    assert not spec.outputs["anisotropic_exchange"].required
 
 
 @pytest.mark.parametrize(
@@ -326,7 +328,11 @@ def test_collate_results_success(
     from aiida.orm import ArrayData, SinglefileData
 
     from aiida_cif2j.calculations.wannier_tb2j import WannierTB2JCalculation
-    from aiida_cif2j.data.exchange_coupling import ExchangeCouplingData
+    from aiida_cif2j.data.exchange_coupling import (
+        AnisotropicExchangeData,
+        DMIVectorData,
+        ExchangeCouplingData,
+    )
 
     retrieved = generate_folder_data(["TB2J.pickle"])
     pickle_file = SinglefileData(file=io.BytesIO(b""), filename="TB2J.pickle")
@@ -334,6 +340,10 @@ def test_collate_results_success(
     exchange_couplings.set_array("J_iso", numpy.array([1.0]))
     magnetic_moments = ArrayData()
     magnetic_moments.set_array("moments", numpy.zeros((1, 3)))
+    dmi_vectors = DMIVectorData()
+    dmi_vectors.set_array("dmi_vector", numpy.zeros((1, 3)))
+    anisotropic_exchange = AnisotropicExchangeData()
+    anisotropic_exchange.set_array("J_tensor", numpy.zeros((1, 3, 3)))
     tb2j_node = generate_calc_job_node(
         WannierTB2JCalculation,
         retrieved,
@@ -342,6 +352,8 @@ def test_collate_results_success(
             "TB2J_pickle_file": pickle_file,
             "exchange_couplings": exchange_couplings,
             "magnetic_moments": magnetic_moments,
+            "dmi_vectors": dmi_vectors,
+            "anisotropic_exchange": anisotropic_exchange,
         },
     )
     process = generate_workchain_process(
@@ -355,12 +367,14 @@ def test_collate_results_success(
     assert process._outputs["TB2J_pickle_file"].pk == pickle_file.pk
     assert process._outputs["exchange_couplings"].pk == exchange_couplings.pk
     assert process._outputs["magnetic_moments"].pk == magnetic_moments.pk
+    assert process._outputs["dmi_vectors"].pk == dmi_vectors.pk
+    assert process._outputs["anisotropic_exchange"].pk == anisotropic_exchange.pk
 
 
-def test_collate_results_without_magnetic_moments(
+def test_collate_results_without_optional_outputs(
     generate_workchain_process, generate_calc_job_node, generate_folder_data
 ):
-    """`magnetic_moments` is optional and must not be forwarded when absent."""
+    """Optional outputs must not be forwarded when absent upstream."""
     import numpy
     from aiida.engine import ExitCode
     from aiida.orm import SinglefileData
@@ -389,6 +403,8 @@ def test_collate_results_without_magnetic_moments(
 
     assert result == ExitCode(0)
     assert "magnetic_moments" not in process._outputs
+    assert "dmi_vectors" not in process._outputs
+    assert "anisotropic_exchange" not in process._outputs
 
 
 def test_get_builder_from_protocol_missing_tb2j_code(generate_structure):

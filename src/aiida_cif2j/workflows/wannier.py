@@ -17,7 +17,11 @@ from aiida_cif2j.calculations.utils import (
     parse_magnetic_structure,
 )
 from aiida_cif2j.calculations.wannier_tb2j import WannierTB2JCalculation
-from aiida_cif2j.data.exchange_coupling import ExchangeCouplingData
+from aiida_cif2j.data.exchange_coupling import (
+    AnisotropicExchangeData,
+    DMIVectorData,
+    ExchangeCouplingData,
+)
 from aiida_cif2j.workflows.utils import (
     collinear_magnetic_moments,
     total_magnetization,
@@ -92,6 +96,22 @@ class WannierTB2JWorkChain(WorkChain):
             required=False,
             help="Per-atom magnetic moment vectors ('site_index', 'moments' "
             "arrays) parsed from the TB2J output pickle file.",
+        )
+        spec.output(
+            "dmi_vectors",
+            valid_type=DMIVectorData,
+            required=False,
+            help="Dzyaloshinskii-Moriya interaction vectors (one row per "
+            "magnetic-site pair), parsed from the TB2J output pickle file. "
+            "Only present if TB2J computed DMI for this run.",
+        )
+        spec.output(
+            "anisotropic_exchange",
+            valid_type=AnisotropicExchangeData,
+            required=False,
+            help="Anisotropic exchange tensors (one row per magnetic-site "
+            "pair), parsed from the TB2J output pickle file. Only present "
+            "if TB2J computed anisotropic exchange for this run.",
         )
 
         spec.exit_code(
@@ -271,8 +291,11 @@ class WannierTB2JWorkChain(WorkChain):
         # self.out("retrieved", self.ctx.tb2j_step.outputs.retrieved)
         self.out("TB2J_pickle_file", self.ctx.tb2j_step.outputs.TB2J_pickle_file)
         self.out("exchange_couplings", self.ctx.tb2j_step.outputs.exchange_couplings)
-        if "magnetic_moments" in self.ctx.tb2j_step.outputs:
-            self.out("magnetic_moments", self.ctx.tb2j_step.outputs.magnetic_moments)
+        tb2j_outputs = self.ctx.tb2j_step.outputs
+        optional_outputs = ("magnetic_moments", "dmi_vectors", "anisotropic_exchange")
+        for optional_output in optional_outputs:
+            if optional_output in tb2j_outputs:
+                self.out(optional_output, tb2j_outputs[optional_output])
 
         # wannier90_outputs = self.ctx.wannier90.outputs
         # if "scf" in wannier90_outputs and (
