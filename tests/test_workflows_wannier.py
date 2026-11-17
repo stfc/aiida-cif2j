@@ -28,6 +28,8 @@ def test_workchain_spec():
     assert spec.inputs["tb2j"]["parameters"].validator is None
     assert "retrieved" not in spec.outputs
     assert spec.outputs["TB2J_pickle_file"].required
+    assert spec.outputs["exchange_couplings"].required
+    assert not spec.outputs["magnetic_moments"].required
 
 
 @pytest.mark.parametrize(
@@ -319,18 +321,28 @@ def test_collate_results_success(
     generate_workchain_process, generate_calc_job_node, generate_folder_data
 ):
     """A successful TB2J calculation should produce 'TB2J_pickle_file' and finish ok."""
+    import numpy
     from aiida.engine import ExitCode
-    from aiida.orm import SinglefileData
+    from aiida.orm import ArrayData, SinglefileData
 
     from aiida_cif2j.calculations.wannier_tb2j import WannierTB2JCalculation
+    from aiida_cif2j.data.exchange_coupling import ExchangeCouplingData
 
     retrieved = generate_folder_data(["TB2J.pickle"])
     pickle_file = SinglefileData(file=io.BytesIO(b""), filename="TB2J.pickle")
+    exchange_couplings = ExchangeCouplingData()
+    exchange_couplings.set_array("J_iso", numpy.array([1.0]))
+    magnetic_moments = ArrayData()
+    magnetic_moments.set_array("moments", numpy.zeros((1, 3)))
     tb2j_node = generate_calc_job_node(
         WannierTB2JCalculation,
         retrieved,
         exit_status=0,
-        outputs={"TB2J_pickle_file": pickle_file},
+        outputs={
+            "TB2J_pickle_file": pickle_file,
+            "exchange_couplings": exchange_couplings,
+            "magnetic_moments": magnetic_moments,
+        },
     )
     process = generate_workchain_process(
         WannierTB2JWorkChain, ctx={"tb2j_step": tb2j_node}
@@ -341,7 +353,42 @@ def test_collate_results_success(
     assert result == ExitCode(0)
     assert "retrieved" not in process._outputs
     assert process._outputs["TB2J_pickle_file"].pk == pickle_file.pk
-    assert process._outputs["TB2J_pickle_file"].pk == pickle_file.pk
+    assert process._outputs["exchange_couplings"].pk == exchange_couplings.pk
+    assert process._outputs["magnetic_moments"].pk == magnetic_moments.pk
+
+
+def test_collate_results_without_magnetic_moments(
+    generate_workchain_process, generate_calc_job_node, generate_folder_data
+):
+    """`magnetic_moments` is optional and must not be forwarded when absent."""
+    import numpy
+    from aiida.engine import ExitCode
+    from aiida.orm import SinglefileData
+
+    from aiida_cif2j.calculations.wannier_tb2j import WannierTB2JCalculation
+    from aiida_cif2j.data.exchange_coupling import ExchangeCouplingData
+
+    retrieved = generate_folder_data(["TB2J.pickle"])
+    pickle_file = SinglefileData(file=io.BytesIO(b""), filename="TB2J.pickle")
+    exchange_couplings = ExchangeCouplingData()
+    exchange_couplings.set_array("J_iso", numpy.array([1.0]))
+    tb2j_node = generate_calc_job_node(
+        WannierTB2JCalculation,
+        retrieved,
+        exit_status=0,
+        outputs={
+            "TB2J_pickle_file": pickle_file,
+            "exchange_couplings": exchange_couplings,
+        },
+    )
+    process = generate_workchain_process(
+        WannierTB2JWorkChain, ctx={"tb2j_step": tb2j_node}
+    )
+
+    result = process.collate_results()
+
+    assert result == ExitCode(0)
+    assert "magnetic_moments" not in process._outputs
 
 
 def test_get_builder_from_protocol_missing_tb2j_code(generate_structure):

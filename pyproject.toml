@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aiida-cif2j"
-version = "0.1.1"
+version = "0.2.0"
 description = "AiiDA workflow plugin for calculating magnetic exchange interactions."
 authors = [
     { name = "Dr. Benjamin T. Speake", email = "benjamin.speake@stfc.ac.uk" },
@@ -51,6 +51,7 @@ where = ["src"]
 "cif2j.wannier_tb2j" = "aiida_cif2j.workflows.wannier:WannierTB2JWorkChain"
 
 [project.entry-points."aiida.data"]
+"cif2j.exchange_coupling" = "aiida_cif2j.data.exchange_coupling:ExchangeCouplingData"
 
 
 [project.optional-dependencies]

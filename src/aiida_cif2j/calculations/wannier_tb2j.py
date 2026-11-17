@@ -5,9 +5,11 @@ from types import UnionType
 from aiida.common import CalcInfo, CodeInfo, InputValidationError
 from aiida.common.folders import Folder
 from aiida.engine import CalcJob, CalcJobProcessSpec
-from aiida.orm import Dict, FolderData, List, SinglefileData, StructureData
+from aiida.orm import ArrayData, Dict, FolderData, List, SinglefileData, StructureData
 from aiida.orm.nodes.data.structure import validate_symbols_tuple
 from pymatgen.io.vasp import Poscar
+
+from aiida_cif2j.data.exchange_coupling import ExchangeCouplingData
 
 
 class WannierTB2JCalculation(CalcJob):
@@ -101,6 +103,20 @@ class WannierTB2JCalculation(CalcJob):
             required=True,
             help="The TB2J output python pickle file.",
         )
+        spec.output(
+            "exchange_couplings",
+            valid_type=ExchangeCouplingData,
+            required=True,
+            help="Isotropic exchange couplings (one row per magnetic-site pair) "
+            "parsed from the TB2J output pickle file.",
+        )
+        spec.output(
+            "magnetic_moments",
+            valid_type=ArrayData,
+            required=False,
+            help="Per-atom magnetic moment vectors ('site_index', 'moments' "
+            "arrays) parsed from the TB2J output pickle file.",
+        )
 
         ## Metadata
         spec.inputs["metadata"]["options"]["resources"].default = {
@@ -114,6 +130,12 @@ class WannierTB2JCalculation(CalcJob):
             300,
             "ERROR_OUTPUT_PICKLE_MISSING",
             message="The retrieved folder does not contain the 'TB2J.pickle' file.",
+        )
+        spec.exit_code(
+            301,
+            "ERROR_OUTPUT_PICKLE_CORRUPT",
+            message="The retrieved 'TB2J.pickle' file could not be parsed into "
+            "exchange-coupling data.",
         )
         return
 

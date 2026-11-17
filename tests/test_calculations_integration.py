@@ -122,6 +122,24 @@ def _load_exchange_count(results) -> int:
     return len(spin_io_dict["exchange_Jdict"])
 
 
+def _assert_exchange_couplings_match_pickle(results) -> None:
+    """Assert `exchange_couplings` was built consistently with the raw pickle."""
+    pickle_bytes = results["TB2J_pickle_file"].get_content(mode="rb")
+    spin_io_dict = pickle.loads(pickle_bytes)
+    n_pairs = len(spin_io_dict["exchange_Jdict"])
+
+    exchange_couplings = results["exchange_couplings"]
+    assert exchange_couplings.get_array("J_iso").shape == (n_pairs,)
+    assert exchange_couplings.get_array("site_i").shape == (n_pairs,)
+    assert exchange_couplings.get_array("distance_vector").shape == (n_pairs, 3)
+
+    magnetic_moments = results["magnetic_moments"]
+    assert magnetic_moments.get_array("moments").shape == (
+        len(spin_io_dict["spinat"]),
+        3,
+    )
+
+
 def test_collinear_end_to_end(wannier_tb2j_code):
     """Run a real, collinear `wann2J.py` calculation end-to-end through AiiDA."""
     inputs = {
@@ -137,6 +155,7 @@ def test_collinear_end_to_end(wannier_tb2j_code):
 
     assert node.is_finished_ok, node.exit_message
     assert _load_exchange_count(results) == 2
+    _assert_exchange_couplings_match_pickle(results)
 
 
 def test_spinor_end_to_end(wannier_tb2j_code):
@@ -153,3 +172,4 @@ def test_spinor_end_to_end(wannier_tb2j_code):
 
     assert node.is_finished_ok, node.exit_message
     assert _load_exchange_count(results) == 2
+    _assert_exchange_couplings_match_pickle(results)
