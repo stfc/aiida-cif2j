@@ -20,6 +20,7 @@ from aiida.engine import run_get_node
 from aiida.orm import Dict, FolderData, List, StructureData
 
 from aiida_cif2j.calculations.wannier_tb2j import WannierTB2JCalculation
+from aiida_cif2j.parsers.tb2j import _deduplicate_mirrored_pairs
 
 pytestmark = pytest.mark.skipif(
     shutil.which("wann2J.py") is None,
@@ -126,12 +127,14 @@ def _assert_exchange_couplings_match_pickle(results) -> None:
     """Assert `exchange_couplings` was built consistently with the raw pickle."""
     pickle_bytes = results["TB2J_pickle_file"].get_content(mode="rb")
     spin_io_dict = pickle.loads(pickle_bytes)
-    n_pairs = len(spin_io_dict["exchange_Jdict"])
+    # `exchange_couplings` is deduplicated (one row per physical bond), unlike
+    # TB2J's own raw `exchange_Jdict` (one row per mirrored direction).
+    n_bonds = len(_deduplicate_mirrored_pairs(spin_io_dict["exchange_Jdict"]))
 
     exchange_couplings = results["exchange_couplings"]
-    assert exchange_couplings.get_array("J_iso").shape == (n_pairs,)
-    assert exchange_couplings.get_array("site_i").shape == (n_pairs,)
-    assert exchange_couplings.get_array("distance_vector").shape == (n_pairs, 3)
+    assert exchange_couplings.get_array("J_iso").shape == (n_bonds,)
+    assert exchange_couplings.get_array("site_i").shape == (n_bonds,)
+    assert exchange_couplings.get_array("distance_vector").shape == (n_bonds, 3)
 
     magnetic_moments = results["magnetic_moments"]
     assert magnetic_moments.get_array("moments").shape == (

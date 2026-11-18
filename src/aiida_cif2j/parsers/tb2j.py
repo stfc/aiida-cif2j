@@ -48,6 +48,54 @@ def _parse_spin_io_dict(pickle_bytes: bytes) -> dict:
     return spin_io
 
 
+def _deduplicate_mirrored_pairs(pair_dict: dict) -> dict:
+    """Collapse each `(R, i, j)`/`(-R, j, i)` mirrored pair into one entry.
+
+    TB2J's own convention double-counts every bond, once from each site's
+    perspective (see `tb2j_pickle_schema_findings` project memory). For an
+    isotropic (scalar) quantity like `exchange_Jdict`'s J_iso, `J_ij == J_ji`
+    exactly in theory, so this is pure duplication rather than independent
+    information - unlike `dmi_ddict`'s DMI vector (antisymmetric,
+    `D_ij == -D_ji`) or `Jani_dict`'s tensor (transposes under the swap),
+    where "drop one direction" needs a sign/transpose convention decided
+    first, so this is intentionally only called for `exchange_Jdict`.
+
+    Picks a deterministic representative per bond (whichever direction's key
+    is encountered first) and averages the two directions' values rather
+    than discarding one outright, to absorb the tiny numerical asymmetry
+    TB2J's Green's-function evaluation can introduce between directions -
+    matching how `pyspinw.tb2j.TB2J_Input.to_hamiltonian()` treats the same
+    mirrored pairs (see `pyspinw_tb2j_integration` project memory). A pair
+    with no mirror present in `pair_dict` (e.g. right at a cutoff-radius
+    boundary) is kept as-is rather than dropped.
+
+    Parameters
+    ----------
+    pair_dict : dict
+        A TB2J `{(R, i, j): value}` dictionary of scalar values.
+
+    Returns
+    -------
+    dict
+        A new `{(R, i, j): value}` dictionary with one entry per physical
+        bond.
+    """
+    deduplicated = {}
+    seen_mirrors = set()
+    for key, value in pair_dict.items():
+        if key in seen_mirrors:
+            continue
+        r_vector, i, j = key
+        mirror_key = (tuple(-r for r in r_vector), j, i)
+        mirror_value = pair_dict.get(mirror_key)
+        if mirror_value is None:
+            deduplicated[key] = value
+        else:
+            deduplicated[key] = (value + mirror_value) / 2.0
+        seen_mirrors.add(mirror_key)
+    return deduplicated
+
+
 def _build_pair_data(
     data_cls: type[ArrayData],
     pair_dict: dict,
@@ -57,11 +105,14 @@ def _build_pair_data(
 ) -> ArrayData:
     """Build a `(site_i, site_j, R, distance, distance_vector, <value>)` node.
 
-    One row is written per `pair_dict` key, matching TB2J's own reporting
-    convention (no deduplication of mirrored-direction pairs). Shared by
+    One row is written per `pair_dict` key, as given - this function itself
+    does no deduplication of TB2J's mirrored-direction pairs. Shared by
     `ExchangeCouplingData`, `DMIVectorData` and `AnisotropicExchangeData`,
     which all key their respective TB2J dict (`exchange_Jdict`, `dmi_ddict`,
-    `Jani_dict`) by the same `(R, i, j)` tuples.
+    `Jani_dict`) by the same `(R, i, j)` tuples; `_build_exchange_coupling_data`
+    pre-deduplicates `exchange_Jdict` via `_deduplicate_mirrored_pairs` before
+    calling this, but `dmi_ddict`/`Jani_dict` are passed through unmodified
+    (see that function's docstring for why).
 
     Parameters
     ----------
@@ -110,6 +161,12 @@ def _build_pair_data(
 def _build_exchange_coupling_data(spin_io: dict) -> ExchangeCouplingData:
     """Build an `ExchangeCouplingData` node from a TB2J results dictionary.
 
+    One row per physical bond, not per `exchange_Jdict` key - see
+    `_deduplicate_mirrored_pairs`. To go back to TB2J's own raw, undeduplicated
+    convention, drop the `_deduplicate_mirrored_pairs(...)` call below and pass
+    `spin_io["exchange_Jdict"]` straight through, as `_build_dmi_vector_data`/
+    `_build_anisotropic_exchange_data` still do.
+
     Parameters
     ----------
     spin_io : dict
@@ -122,7 +179,7 @@ def _build_exchange_coupling_data(spin_io: dict) -> ExchangeCouplingData:
     """
     return _build_pair_data(
         ExchangeCouplingData,
-        spin_io["exchange_Jdict"],
+        _deduplicate_mirrored_pairs(spin_io["exchange_Jdict"]),
         spin_io["distance_dict"],
         "J_iso",
         UNITS,

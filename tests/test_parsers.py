@@ -3,12 +3,14 @@
 import pickle
 
 import numpy
+import pytest
 
 from aiida_cif2j.calculations.wannier_tb2j import WannierTB2JCalculation
 from aiida_cif2j.parsers.tb2j import (
     TB2JParser,
     _build_anisotropic_exchange_data,
     _build_dmi_vector_data,
+    _deduplicate_mirrored_pairs,
 )
 
 
@@ -37,11 +39,14 @@ def test_parse_success(
     assert results["TB2J_pickle_file"].get_content(mode="rb") == pickle_bytes
     assert results["TB2J_pickle_file"].filename == "TB2J.pickle"
 
-    n_pairs = len(spin_io["exchange_Jdict"])
+    # `exchange_couplings` is deduplicated (one row per physical bond), unlike
+    # TB2J's own raw `exchange_Jdict` (one row per mirrored direction) - see
+    # `_deduplicate_mirrored_pairs`.
+    n_bonds = len(_deduplicate_mirrored_pairs(spin_io["exchange_Jdict"]))
     exchange_couplings = results["exchange_couplings"]
-    assert len(exchange_couplings.get_array("J_iso")) == n_pairs
-    assert exchange_couplings.get_array("site_i").shape == (n_pairs,)
-    assert exchange_couplings.get_array("distance_vector").shape == (n_pairs, 3)
+    assert len(exchange_couplings.get_array("J_iso")) == n_bonds
+    assert exchange_couplings.get_array("site_i").shape == (n_bonds,)
+    assert exchange_couplings.get_array("distance_vector").shape == (n_bonds, 3)
     assert exchange_couplings.base.attributes.get("units")["J_iso"] == "meV"
 
     magnetic_moments = results["magnetic_moments"]
@@ -83,6 +88,27 @@ def test_parse_corrupt_pickle(generate_calc_job_node, generate_folder_data, tmp_
         calcfunction.exit_status
         == WannierTB2JCalculation.exit_codes.ERROR_OUTPUT_PICKLE_CORRUPT.status
     )
+
+
+def test_deduplicate_mirrored_pairs_averages_matching_mirror():
+    """A mirrored `(R, i, j)`/`(-R, j, i)` pair collapses to one averaged entry."""
+    pair_dict = {((1, 0, 0), 0, 1): -0.10, ((-1, 0, 0), 1, 0): -0.08}
+
+    deduplicated = _deduplicate_mirrored_pairs(pair_dict)
+
+    assert len(deduplicated) == 1
+    ((key, value),) = deduplicated.items()
+    assert key == ((1, 0, 0), 0, 1)
+    assert value == pytest.approx(-0.09)
+
+
+def test_deduplicate_mirrored_pairs_keeps_unmirrored_entry():
+    """A pair with no mirror present (e.g. a cutoff-radius boundary) is kept as-is."""
+    pair_dict = {((0, 0, 0), 0, 1): -0.1, ((2, 0, 0), 0, 2): -0.02}
+
+    deduplicated = _deduplicate_mirrored_pairs(pair_dict)
+
+    assert deduplicated == pair_dict
 
 
 def _minimal_spin_io(dmi_ddict=None, jani_dict=None) -> dict:

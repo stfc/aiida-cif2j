@@ -7,21 +7,29 @@ UNITS = {"J_iso": "meV", "distance": "Ang", "distance_vector": "Ang"}
 
 
 class ExchangeCouplingData(ArrayData):
-    """One row per magnetic-site-pair entry in a TB2J run's `exchange_Jdict`.
+    """One row per physical magnetic-site pair, from a TB2J run's `exchange_Jdict`.
 
-    Matches TB2J's own reporting convention: one row per `exchange_Jdict` key,
-    with no deduplication of mirrored-direction pairs (TB2J's own
-    `exchange.out` output does not deduplicate them either).
+    Unlike `DMIVectorData`/`AnisotropicExchangeData` (and unlike TB2J's own
+    `exchange.out`, which double-counts every bond once from each site's
+    perspective), `TB2JParser` deduplicates `exchange_Jdict`'s mirrored
+    `(R, i, j)`/`(-R, j, i)` pairs before building this node - see
+    `aiida_cif2j.parsers.tb2j._deduplicate_mirrored_pairs`. This is safe only
+    because J_iso is a scalar with `J_ij == J_ji`; DMI/anisotropic exchange
+    are antisymmetric/tensor-valued and are kept TB2J-faithful instead.
 
     Stored arrays (all length `n_pairs`, except `R`/`distance_vector` which
     are `(n_pairs, 3)`):
 
-    - `site_i`, `site_j`: 0-based magnetic-site indices of the pair.
+    - `site_i`, `site_j`: 0-based magnetic-site indices of the pair, in
+      whichever of the two mirrored directions TB2J's `exchange_Jdict`
+      happened to list first - the other direction's `(R, i, j)` is
+      equivalent and not stored separately.
     - `R`: the lattice-translation vector TB2J associates with this coupling.
     - `distance`: scalar distance between the two sites, in Angstrom.
     - `distance_vector`: cartesian vector from site `i` to site `j`, in
       Angstrom.
-    - `J_iso`: isotropic exchange coupling, in meV.
+    - `J_iso`: isotropic exchange coupling, in meV - averaged over both
+      mirrored directions' values (see `_deduplicate_mirrored_pairs`).
     """
 
 
