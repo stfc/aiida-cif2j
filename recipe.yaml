@@ -1,0 +1,57 @@
+schema_version: 1
+
+context:
+  name: aiida-cif2j
+  version: "0.1.1"
+
+package:
+  name: ${{ name|lower }}
+  version: ${{ version }}
+
+source:
+  url: https://pypi.org/packages/source/${{ name[0] }}/${{ name }}/${{ name | replace("-", "_") }}-${{ version }}.tar.gz
+  sha256: 2ece0f00467eaf8db2a6bd1dda6335abeec10ad30eae3c758a2d148f0fc25337
+
+build:
+  noarch: python
+  number: 0
+  script: ${{ PYTHON }} -m pip install . -vv --no-deps --no-build-isolation
+
+requirements:
+  host:
+    - python ${{ python_min }}.*
+    - pip
+    - setuptools
+  run:
+    - python >=${{ python_min }}
+    - aiida-core>=2.7,<3
+    - pymatgen 
+    - click
+
+tests:
+  - python:
+      imports:
+        - aiida_cif2j
+      python_version:
+        - ${{ python_min }}.*
+        - "*"
+      pip_check: true
+  - script:
+    - verdi plugin list aiida.calculations cif2j.wannier_tb2j
+    requirements:
+      run: 
+        - aiida-core >= 2.7
+
+about:
+  homepage: https://github.com/stfc/aiida-cif2j
+  license: BSD-3-Clause
+  license_file: LICENSE
+  summary: AiiDA workflow plugin for calculating magnetic exchange interactions from SCF calculations.
+  description: |
+    AiiDA workflow plugin for calculating magnetic exchange interactions from SCF calculations using Wannier90 and TB2J.
+  documentation: https://stfc.github.io/aiida-cif2j
+  repository: https://github.com/stfc/aiida-cif2j
+
+extra:
+  recipe-maintainers:
+    - BTSpeake

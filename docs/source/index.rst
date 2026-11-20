@@ -9,6 +9,7 @@ aiida_cif2j documentation
    examples
    inputs
    workflows
+   mcp
 
 API
 ===

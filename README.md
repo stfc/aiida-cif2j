@@ -31,6 +31,21 @@ plugin ships a CLI command to do this for you:
 cif2j wannier90 install
 ```
 
+## MCP integration
+
+```bash
+pip install "aiida-cif2j[mcp]"
+```
+
+pulls in [aiida-mcp](https://github.com/stfc/aiida-mcp) and registers `aiida_cif2j.mcp`
+under its `aiida_mcp.plugins` entry point group, so any aiida-mcp server running in the
+same environment automatically exposes `describe_cif2j_calcjob` and `submit_cif2j_job`.
+A second pair of tools for the full Wannier90 -> TB2J workflow,
+`describe_wannier_tb2j_workflow`/`submit_wannier_tb2j_workflow`, additionally requires
+`aiida-wannier90-workflows` (see [Optional: Wannier90 Workflows](#optional-wannier90-workflows)
+above). See the [MCP integration](https://stfc.github.io/aiida-cif2j/mcp.html) docs page
+for both tools' arguments and worked examples.
+
 ## Requirements
 
 To use this plugin a configured AiiDA profile and computer are required, as well as a compiled

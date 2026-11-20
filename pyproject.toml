@@ -55,8 +55,11 @@ where = ["src"]
 "cif2j.dmi_vectors" = "aiida_cif2j.data.exchange_coupling:DMIVectorData"
 "cif2j.anisotropic_exchange" = "aiida_cif2j.data.exchange_coupling:AnisotropicExchangeData"
 
+[project.entry-points."aiida_mcp.plugins"]
+cif2j = "aiida_cif2j.mcp"
 
 [project.optional-dependencies]
+# mcp = ["aiida-mcp"]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=6.0",
