@@ -40,6 +40,9 @@ cif2j = "aiida_cif2j.cli:cli"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+aiida_cif2j = ["skills/**/*"]
+
 [project.entry-points."aiida.calculations"]
 "cif2j.wannier_tb2j" = "aiida_cif2j.calculations.wannier_tb2j:WannierTB2JCalculation"
 

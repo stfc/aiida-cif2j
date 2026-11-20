@@ -10,6 +10,7 @@ aiida_cif2j documentation
    inputs
    workflows
    mcp
+   skills
 
 API
 ===

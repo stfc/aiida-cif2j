@@ -2,6 +2,7 @@
 
 import click
 
+from aiida_cif2j.cli.skills import skills_group
 from aiida_cif2j.cli.wannier90 import wannier90_group
 
 
@@ -11,3 +12,4 @@ def cli():
 
 
 cli.add_command(wannier90_group)
+cli.add_command(skills_group)

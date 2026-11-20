@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from aiida_cif2j.cli import cli
+from aiida_cif2j.cli import cli, skills
 from aiida_cif2j.cli.wannier90 import (
     AIIDA_WANNIER90_REQUIREMENT,
     AIIDA_WANNIER90_WORKFLOWS_REQUIREMENT,
@@ -237,3 +237,43 @@ def test_wannier90_submit_tb2j_parameters_invalid_json(tmp_path):
 
     assert result.exit_code != 0
     assert "invalid JSON" in result.output
+
+
+def test_install_skill_copies_skill_md(tmp_path):
+    """install_skill copies SKILL.md into a fresh target directory."""
+    destination = skills.install_skill(tmp_path)
+
+    assert destination == tmp_path / "aiida-cif2j"
+    assert (destination / "SKILL.md").is_file()
+
+
+def test_install_skill_can_run_twice(tmp_path):
+    """install_skill can be re-run against an existing install without failing."""
+    skills.install_skill(tmp_path)
+    destination = skills.install_skill(tmp_path)
+
+    assert (destination / "SKILL.md").is_file()
+
+
+def test_skills_install_uses_default_skills_dir(tmp_path, monkeypatch):
+    """`cif2j skills install` with no argument targets the default skills directory."""
+    default_dir = tmp_path / ".claude" / "skills"
+    monkeypatch.setattr(skills, "DEFAULT_SKILLS_DIR", default_dir)
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["skills", "install"])
+
+    assert result.exit_code == 0, result.output
+    assert (default_dir / "aiida-cif2j" / "SKILL.md").is_file()
+
+
+def test_skills_install_with_explicit_dir(tmp_path):
+    """`cif2j skills install <dir>` installs into the given directory."""
+    target = tmp_path / "custom"
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["skills", "install", str(target)])
+
+    assert result.exit_code == 0, result.output
+    assert (target / "aiida-cif2j" / "SKILL.md").is_file()
+    assert "Installed" in result.output
